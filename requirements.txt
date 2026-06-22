@@ -1,0 +1,17 @@
+codeact @ git+https://github.com/zzszmyf/codeact
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0
+
+# Multi-datasource drivers
+sqlalchemy>=2.0
+pymysql>=1.1
+psycopg2-binary>=2.9
+pymssql>=2.2
+elasticsearch>=8.0
+pyhive[hive]>=0.7
+impyla>=0.19
+pymilvus>=2.3
+
+# Heavy drivers (optional — uncomment if needed for Oracle/DB2 demos):
+# cx_Oracle>=8.3   # requires Oracle Instant Client
+# ibm_db>=3.2      # requires IBM DB2 client
