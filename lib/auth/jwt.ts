@@ -1,5 +1,6 @@
 import { SignJWT, jwtVerify } from "jose"
-import { randomUUID } from "crypto"
+
+const randomUUID = () => globalThis.crypto.randomUUID()
 
 const secret = () => {
   const s = process.env.JWT_SECRET

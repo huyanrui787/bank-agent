@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { Suspense, useEffect, useMemo, useState } from "react"
 import { useSearchParams } from "next/navigation"
 import { toast } from "sonner"
 import {
@@ -36,6 +36,14 @@ const examples = [
 ]
 
 export default function AnalysisPage() {
+  return (
+    <Suspense fallback={null}>
+      <AnalysisPageInner />
+    </Suspense>
+  )
+}
+
+function AnalysisPageInner() {
   const search = useSearchParams()
   const initialId = search.get("id") ?? ""
   const [query, setQuery] = useState(initialId || "张明")
