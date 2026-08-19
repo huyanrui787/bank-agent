@@ -30,9 +30,9 @@
   --radius-lg: 10px;
   --radius-xl: 14px;
 
-  --font-sans: var(--font-geist-sans), -apple-system, BlinkMacSystemFont, "PingFang SC",
+  --font-sans: -apple-system, BlinkMacSystemFont, "PingFang SC",
     "Hiragino Sans GB", "Microsoft YaHei", "Helvetica Neue", Helvetica, Arial, sans-serif;
-  --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
 html,
