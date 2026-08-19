@@ -239,6 +239,25 @@ def query_one(sql, params=None):
 """
 
 
+def _build_sqlite_file_preamble(ds: "DataSourcePayload") -> str:
+    """连接指定的 SQLite 文件（database_name 为文件路径），用于接入独立的外部 SQLite 库。"""
+    path = ds.database_name or DB_PATH
+    return f"""
+# ── External SQLite file datasource ──────────────────────────────────────────
+import sqlite3 as _sqlite3
+_conn = _sqlite3.connect({repr(path)})
+_conn.row_factory = _sqlite3.Row
+
+def query(sql, params=None):
+    _cur = _conn.execute(sql, params or [])
+    return [dict(r) for r in _cur.fetchall()]
+
+def query_one(sql, params=None):
+    rows = query(sql, params)
+    return rows[0] if rows else {{}}
+"""
+
+
 def build_datasource_preamble(ds: "DataSourcePayload") -> str:
     """Return Python preamble that defines query() for the given external datasource."""
     t = ds.type
@@ -251,7 +270,10 @@ def build_datasource_preamble(ds: "DataSourcePayload") -> str:
     elif t == "dtsql":
         return _build_dtsql_preamble(ds)
     elif t == "sqlite":
-        return ""  # use default preamble
+        # 指定了独立文件路径 → 连该文件；否则用默认 bank.db
+        if ds.database_name and ds.database_name != DB_PATH:
+            return _build_sqlite_file_preamble(ds)
+        return ""
     raise ValueError(f"Unknown datasource type: {t}")
 
 
@@ -374,17 +396,17 @@ def test_datasource(ds: DataSourcePayload):
 @app.post("/exec", response_model=ExecResponse)
 def exec_code(req: ExecRequest):
     # Choose preamble: external datasource takes priority over default SQLite
-    if req.datasource and req.datasource.type != "sqlite":
-        try:
-            ds_preamble = build_datasource_preamble(req.datasource)
-            # Minimal base (no SQLite query fn) + datasource fn + scope
-            executor = ExecPythonTool(preamble=ds_preamble, config=_config)
-        except Exception as e:
-            return ExecResponse(stdout="", stderr=f"数据源配置错误：{e}", charts=[])
-    elif req.scope and req.scope.type != "bank":
-        executor = _build_executor(req.scope.type, req.scope.managerName, req.scope.branch)
-    else:
-        executor = _executor_bank
+    try:
+        if req.datasource and req.datasource.type != "sqlite":
+            executor = ExecPythonTool(preamble=build_datasource_preamble(req.datasource), config=_config)
+        elif req.datasource and req.datasource.type == "sqlite" and req.datasource.database_name and req.datasource.database_name != DB_PATH:
+            executor = ExecPythonTool(preamble=_build_sqlite_file_preamble(req.datasource), config=_config)
+        elif req.scope and req.scope.type != "bank":
+            executor = _build_executor(req.scope.type, req.scope.managerName, req.scope.branch)
+        else:
+            executor = _executor_bank
+    except Exception as e:
+        return ExecResponse(stdout="", stderr=f"数据源配置错误：{e}", charts=[])
 
     outputs = executor.execute(req.code)
     raw = "\n".join(getattr(o, "text", str(o)) for o in outputs)
