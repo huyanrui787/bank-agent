@@ -171,4 +171,21 @@ CREATE TABLE IF NOT EXISTS workflows (
   created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
+
+CREATE TABLE IF NOT EXISTS tasks (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  title TEXT NOT NULL,
+  description TEXT,
+  trigger_at TEXT NOT NULL,
+  recurrence TEXT NOT NULL DEFAULT 'none',
+  weekday INTEGER,
+  month_day INTEGER,
+  related_customer TEXT,
+  enabled INTEGER DEFAULT 1,
+  done INTEGER DEFAULT 0,
+  last_fired_at TEXT,
+  created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+CREATE INDEX IF NOT EXISTS idx_tasks_user ON tasks(user_id, enabled, done);
 `
