@@ -1,6 +1,6 @@
 /**
  * 用真实 LLM 驱动的 Agent 主循环。
- * - 调用 ntnl-openai/gpt-5.5 (Responses API, SSE)
+ * - 调用 qwen-plus (OpenAI 兼容 Chat Completions API, SSE)
  * - 在多轮 tool-call 循环中执行本地工具
  * - 以 async generator 形式 yield StreamEvent，支持前端流式渲染
  */

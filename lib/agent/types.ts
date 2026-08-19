@@ -28,7 +28,7 @@ export type AgentResponse = {
   resultType: AgentResultType
   data: unknown
   suggestedNextActions: string[]
-  /** 实际驱动本轮回答的 agent 标识：模型 id（如 "gpt-5.5"）/ "mock" / "mock-fallback" */
+  /** 实际驱动本轮回答的 agent 标识：模型 id（如 "qwen-plus"）/ "mock" / "mock-fallback" */
   _agent?: string
   _llmError?: string
 }

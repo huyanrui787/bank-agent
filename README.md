@@ -18,7 +18,7 @@
 - Tailwind CSS v4（手写 shadcn 风格 UI primitives，无 CLI 依赖）
 - Radix UI（dialog / select / tabs / tooltip 等无障碍组件）
 - TanStack Table v8、Recharts、sonner、lucide-react、zod
-- **Agent 双轨**：默认走真实 LLM（OpenAI Responses API，已对接 `ntnl-openai/gpt-5.5`），失败/未配置 key 时自动 fallback 到 deterministic mock，保证现场演示稳定
+- **Agent 双轨**：默认走真实 LLM（OpenAI 兼容 Chat Completions API，已对接 `qwen/qwen-plus`·阿里云百炼 DashScope），失败/未配置 key 时自动 fallback 到 deterministic mock，保证现场演示稳定
 
 ## Agent 工作流
 
@@ -27,7 +27,7 @@
     ↓
 /api/mock-agent (Node runtime)
     ↓
-runLlmAgent → gpt-5.5 (Responses API + SSE)
+runLlmAgent → qwen-plus (Chat Completions API + SSE)
     ↓ tool_call
 本地工具（filterCustomers / scanAlerts / analyzeCustomer / ...）
     ↑ JSON result
@@ -43,11 +43,10 @@ runLlmAgent → gpt-5.5 (Responses API + SSE)
 复制 `.env.example` 为 `.env.local`，填入：
 
 ```env
-LLM_PROVIDER=ntnl-openai
-LLM_BASE_URL=https://new-api.ntnl.io/v1
-LLM_API_KEY=sk-...        # 与本机 opencode auth.json 中 ntnl-openai.key 一致
-LLM_MODEL=gpt-5.5
-LLM_REASONING_EFFORT=low  # low | medium | high
+LLM_PROVIDER=qwen
+LLM_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+LLM_API_KEY=sk-...        # 阿里云百炼 DashScope 的 API Key
+LLM_MODEL=qwen-plus
 USE_MOCK_AGENT=false      # true 时强制本地 mock，无需网络
 ```
 

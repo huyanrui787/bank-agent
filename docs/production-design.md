@@ -15,7 +15,7 @@
 
 - 前端：Next.js 16（App Router + Turbopack）+ TypeScript + shadcn 风格 UI + Tailwind v4
 - 数据：本地 Mock（SQLite，`data/bank.db`），不接真实系统
-- Agent：双轨——真实 LLM（`gpt-5.5`，OpenAI Responses API + SSE）+ 本地 deterministic mock 兜底
+- Agent：双轨——真实 LLM（`qwen-plus`，OpenAI 兼容 Chat Completions API + SSE）+ 本地 deterministic mock 兜底
 - 执行引擎：Python `codeact` sidecar（`codeact_server.py`，端口 8765），支持多数据源 + 图表输出
 - 已具备：JWT 认证（5 角色）、数据范围隔离（personal/branch/bank）、哈希链审计、可视化工作流
 
