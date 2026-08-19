@@ -4,7 +4,7 @@ import { useMemo, useState } from "react"
 import { Download, FileSpreadsheet, Filter, Layers, Search, BarChart2 } from "lucide-react"
 import {
   PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip,
-  ResponsiveContainer, Legend,
+  ResponsiveContainer,
 } from "recharts"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"

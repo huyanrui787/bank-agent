@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server"
 import { z } from "zod"
-import { streamLlmAgent } from "@/lib/agent/llm-agent"
+import { streamLlmAgent, isLlmConfigured } from "@/lib/agent/llm-agent"
+import { streamMockAgent } from "@/lib/agent/mock-tools"
 import { getSkillPrompts, BUILTIN_SKILLS } from "@/lib/agent/skill-store"
 import { userFromHeaders, buildScope } from "@/lib/auth/scope"
 import { writeAuditLog } from "@/lib/audit/log"
@@ -56,18 +57,40 @@ export async function POST(req: NextRequest) {
 
   const enc = new TextEncoder()
   let finalResponse: AgentResponse | null = null
+  const useMock = process.env.USE_MOCK_AGENT === "true" || !isLlmConfigured()
 
   const stream = new ReadableStream({
     async start(controller) {
+      const enqueue = (event: StreamEvent) => controller.enqueue(enc.encode(`data: ${JSON.stringify(event)}\n\n`))
+
       try {
-        for await (const event of streamLlmAgent(message, skillPrompts, { user, scope })) {
-          const line = `data: ${JSON.stringify(event)}\n\n`
-          controller.enqueue(enc.encode(line))
-          if (event.type === "done") finalResponse = event.response
+        if (useMock) {
+          for await (const event of streamMockAgent(message)) {
+            enqueue(event)
+            if (event.type === "done") finalResponse = event.response
+          }
+        } else {
+          try {
+            for await (const event of streamLlmAgent(message, skillPrompts, { user, scope })) {
+              enqueue(event)
+              if (event.type === "done") finalResponse = event.response
+            }
+          } catch (err) {
+            // LLM 运行时失败 → 自动降级到 deterministic mock，保证现场演示稳定
+            const errMsg = err instanceof Error ? err.message : String(err)
+            for await (const event of streamMockAgent(message)) {
+              if (event.type === "done") {
+                const fallback: AgentResponse = { ...event.response, _agent: "mock-fallback", _llmError: errMsg }
+                finalResponse = fallback
+                enqueue({ type: "done", response: fallback })
+              } else {
+                enqueue(event)
+              }
+            }
+          }
         }
       } catch (err) {
-        const errEvent: StreamEvent = { type: "error", message: err instanceof Error ? err.message : String(err) }
-        controller.enqueue(enc.encode(`data: ${JSON.stringify(errEvent)}\n\n`))
+        enqueue({ type: "error", message: err instanceof Error ? err.message : String(err) })
       }
       controller.close()
 

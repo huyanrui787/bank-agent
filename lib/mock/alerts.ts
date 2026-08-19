@@ -1,35 +1,5 @@
 import type { BusinessAlert, BusinessAlertType, AlertSeverity, AlertStatus } from "./types"
 
-const types: BusinessAlertType[] = [
-  "deposit_due",
-  "loan_due",
-  "financing_growth",
-  "financing_surge",
-  "new_property",
-  "grid_change",
-  "branch_abnormal",
-]
-
-const sevByType: Record<BusinessAlertType, AlertSeverity> = {
-  deposit_due: "warning",
-  loan_due: "critical",
-  financing_growth: "info",
-  financing_surge: "critical",
-  new_property: "info",
-  grid_change: "warning",
-  branch_abnormal: "critical",
-}
-
-const titleByType: Record<BusinessAlertType, string> = {
-  deposit_due: "存款即将到期",
-  loan_due: "贷款即将到期",
-  financing_growth: "融资家数持续增长",
-  financing_surge: "融资金额大幅上浮",
-  new_property: "辖区新增楼盘",
-  grid_change: "网格客户结构变动",
-  branch_abnormal: "支行存贷数据异常",
-}
-
 const actionByType: Record<BusinessAlertType, string> = {
   deposit_due: "提前半个月电话沟通续存意向，准备产品方案",
   loan_due: "立即对接客户经理，在到期前 15 天完成续作或回收",

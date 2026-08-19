@@ -14,10 +14,9 @@ type WFItem = { id: string; name: string; description: string; enabled: boolean;
 export default function WorkflowListPage() {
   const router = useRouter()
   const [workflows, setWorkflows] = useState<WFItem[]>([])
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
 
   const fetch_ = useCallback(async () => {
-    setLoading(true)
     try {
       const res = await fetch("/api/workflows")
       if (res.ok) setWorkflows((await res.json()).workflows ?? [])

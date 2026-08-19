@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input"
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select"
-import { nowMinuteLocal, WEEKDAY_LABELS } from "@/lib/tasks/types"
+import { WEEKDAY_LABELS } from "@/lib/tasks/types"
 import type { TaskItem, RecurrenceRule } from "@/lib/tasks/types"
 
 const schema = z.object({
@@ -42,8 +42,9 @@ export function TaskForm({ open, onOpenChange, initial, onSubmit }: Props) {
   const [relatedCustomer, setRelatedCustomer] = useState("")
   const [errors, setErrors] = useState<Partial<Record<keyof FormData, string>>>({})
 
-  // Populate form when editing
+  // Populate form when editing（打开时重置表单；默认触发时间依赖 Date.now，不适合在渲染期计算，保留 effect）
   useEffect(() => {
+    /* eslint-disable react-hooks/set-state-in-effect */
     if (initial) {
       setTitle(initial.title)
       setDescription(initial.description ?? "")
@@ -65,6 +66,7 @@ export function TaskForm({ open, onOpenChange, initial, onSubmit }: Props) {
       setRelatedCustomer("")
     }
     setErrors({})
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, [initial, open])
 
   function handleSubmit() {

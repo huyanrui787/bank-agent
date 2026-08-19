@@ -134,7 +134,7 @@ async function fetchCompletion(opts: {
   return res.body
 }
 
-function* parseSseLine(line: string): Generator<{ content?: string; toolCallDelta?: { index: number; id?: string; name?: string; arguments?: string }; done?: boolean }> {
+function* parseSseLine(line: string): Generator<{ content?: string; reasoning?: string; toolCallDelta?: { index: number; id?: string; name?: string; arguments?: string }; done?: boolean }> {
   if (!line.startsWith("data:")) return
   const dataStr = line.slice(5).trim()
   if (dataStr === "[DONE]") { yield { done: true }; return }
@@ -149,6 +149,11 @@ function* parseSseLine(line: string): Generator<{ content?: string; toolCallDelt
     if (!delta) continue
     if (typeof delta.content === "string" && delta.content) {
       yield { content: delta.content }
+    }
+    const raw = delta as Record<string, unknown>
+    const reasoning = raw.reasoning_content ?? raw.reasoning
+    if (typeof reasoning === "string" && reasoning) {
+      yield { reasoning }
     }
     const tcs = delta.tool_calls as { index: number; id?: string; function?: { name?: string; arguments?: string } }[] | undefined
     if (tcs) {
@@ -171,36 +176,43 @@ export async function callLlm(opts: {
   const decoder = new TextDecoder()
   let buffer = ""
   let text = ""
+  const reasoningParts: string[] = []
   const toolCallMap: Record<number, { id: string; name: string; arguments: string }> = {}
 
-  while (true) {
-    const { value, done } = await reader.read()
-    if (done) break
-    buffer += decoder.decode(value, { stream: true })
-    let idx
-    while ((idx = buffer.indexOf("\n\n")) !== -1) {
-      const chunk = buffer.slice(0, idx)
-      buffer = buffer.slice(idx + 2)
-      for (const line of chunk.split("\n")) {
-        for (const parsed of parseSseLine(line)) {
-          if (parsed.content) text += parsed.content
-          if (parsed.toolCallDelta) {
-            const { index, id, name, arguments: args } = parsed.toolCallDelta
-            if (!toolCallMap[index]) toolCallMap[index] = { id: "", name: "", arguments: "" }
-            if (id) toolCallMap[index].id = id
-            if (name) toolCallMap[index].name += name
-            if (args) toolCallMap[index].arguments += args
-          }
+  const consumeBlock = (block: string) => {
+    for (const line of block.split("\n")) {
+      for (const parsed of parseSseLine(line)) {
+        if (parsed.content) text += parsed.content
+        if (parsed.reasoning) reasoningParts.push(parsed.reasoning)
+        if (parsed.toolCallDelta) {
+          const { index, id, name, arguments: args } = parsed.toolCallDelta
+          if (!toolCallMap[index]) toolCallMap[index] = { id: "", name: "", arguments: "" }
+          if (id) toolCallMap[index].id = id
+          if (name) toolCallMap[index].name += name
+          if (args) toolCallMap[index].arguments += args
         }
       }
     }
   }
 
+  while (true) {
+    const { value, done } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, "\n")
+    let idx
+    while ((idx = buffer.indexOf("\n\n")) !== -1) {
+      consumeBlock(buffer.slice(0, idx))
+      buffer = buffer.slice(idx + 2)
+    }
+  }
+  consumeBlock(buffer) // flush 末尾残留
+
   const toolCalls: ToolCall[] = Object.values(toolCallMap)
     .filter((tc) => tc.name)
     .map((tc) => ({ call_id: tc.id || crypto.randomUUID(), name: tc.name, arguments: tc.arguments || "{}" }))
 
-  return { text, toolCalls, reasoningSummary: [], rawOutputItems: [] }
+  const reasoningText = reasoningParts.join("").trim()
+  return { text, toolCalls, reasoningSummary: reasoningText ? [reasoningText] : [], rawOutputItems: [] }
 }
 
 /** 流式：逐 token yield string，用于最终回复轮次 */
@@ -214,19 +226,23 @@ export async function* streamLlmText(opts: {
   const decoder = new TextDecoder()
   let buffer = ""
 
-  while (true) {
-    const { value, done } = await reader.read()
-    if (done) break
-    buffer += decoder.decode(value, { stream: true })
-    let idx
-    while ((idx = buffer.indexOf("\n\n")) !== -1) {
-      const chunk = buffer.slice(0, idx)
-      buffer = buffer.slice(idx + 2)
-      for (const line of chunk.split("\n")) {
-        for (const parsed of parseSseLine(line)) {
-          if (parsed.content) yield parsed.content
-        }
+  const yieldBlock = function* (block: string): Generator<string> {
+    for (const line of block.split("\n")) {
+      for (const parsed of parseSseLine(line)) {
+        if (parsed.content) yield parsed.content
       }
     }
   }
+
+  while (true) {
+    const { value, done } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, "\n")
+    let idx
+    while ((idx = buffer.indexOf("\n\n")) !== -1) {
+      yield* yieldBlock(buffer.slice(0, idx))
+      buffer = buffer.slice(idx + 2)
+    }
+  }
+  yield* yieldBlock(buffer) // flush 末尾残留
 }

@@ -20,6 +20,7 @@ export function useTasks() {
   const [tasks, setTasks] = useState<TaskItem[]>([])
 
   useEffect(() => {
+    /* eslint-disable react-hooks/set-state-in-effect -- 用户切换时水合其 localStorage 任务列表 */
     if (!user?.id) { setTasks([]); return }
     try {
       const raw = localStorage.getItem(storageKey(user.id))
@@ -27,6 +28,7 @@ export function useTasks() {
     } catch {
       setTasks([])
     }
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, [user?.id])
 
   const save = useCallback((list: TaskItem[]) => {
@@ -34,7 +36,7 @@ export function useTasks() {
     if (user?.id) {
       localStorage.setItem(storageKey(user.id), JSON.stringify(list))
     }
-  }, [user?.id])
+  }, [user])
 
   const addTask = useCallback((draft: Omit<TaskItem, "id" | "userId" | "createdAt">) => {
     if (!user?.id) return
@@ -46,7 +48,7 @@ export function useTasks() {
       createdAt: new Date().toISOString(),
     }
     save([...pruned, newItem])
-  }, [tasks, save, user?.id])
+  }, [tasks, save, user])
 
   const updateTask = useCallback((id: string, patch: Partial<TaskItem>) => {
     save(tasks.map((t) => (t.id === id ? { ...t, ...patch } : t)))

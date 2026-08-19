@@ -1,8 +1,6 @@
 import type { Intent } from "./types"
 
 export function detectIntent(input: string): Intent {
-  const s = input.toLowerCase()
-
   if (
     input.includes("客户清单") ||
     input.includes("梳理") ||

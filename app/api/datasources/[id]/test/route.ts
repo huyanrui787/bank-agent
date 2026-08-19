@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getDb } from "@/lib/db"
 import { userFromHeaders } from "@/lib/auth/scope"
+import { decryptSecret } from "@/lib/security/encrypt"
 
 export const runtime = "nodejs"
 
@@ -17,7 +18,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (!row) return NextResponse.json({ error: "数据源不存在" }, { status: 404 })
 
   const extra = JSON.parse(row.extra_config || "{}") as Record<string, unknown>
-  const password = row.password_enc ? Buffer.from(row.password_enc, "base64").toString("utf-8") : undefined
+  const password = decryptSecret(row.password_enc)
 
   const payload = {
     type: row.type,

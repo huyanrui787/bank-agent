@@ -108,25 +108,28 @@ function DatasourceForm({ open, onOpenChange, initial, onSaved }: {
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string; latencyMs: number } | null>(null)
   const [savedId, setSavedId] = useState<string | null>(null)
+  const [wasOpen, setWasOpen] = useState(open)
 
-  useEffect(() => {
-    if (open) {
-      setSavedId(initial?.id ?? null)
-      setName(initial?.name ?? "")
-      setType(initial?.type ?? "mysql")
-      const f: Record<string, string> = {}
-      if (initial) {
-        if (initial.host) f.host = initial.host
-        if (initial.port) f.port = String(initial.port)
-        if (initial.databaseName) f.databaseName = initial.databaseName
-        if (initial.username) f.username = initial.username
-        if (initial.hasPassword) f.password = "••••••••"
-        Object.entries(initial.extraConfig ?? {}).forEach(([k, v]) => { f[k] = String(v) })
-      }
-      setFields(f)
-      setTestResult(null)
+  // 打开时重置表单（渲染期调整状态，避免 effect 内同步 setState）
+  if (open && !wasOpen) {
+    setWasOpen(true)
+    setSavedId(initial?.id ?? null)
+    setName(initial?.name ?? "")
+    setType(initial?.type ?? "mysql")
+    const f: Record<string, string> = {}
+    if (initial) {
+      if (initial.host) f.host = initial.host
+      if (initial.port) f.port = String(initial.port)
+      if (initial.databaseName) f.databaseName = initial.databaseName
+      if (initial.username) f.username = initial.username
+      if (initial.hasPassword) f.password = "••••••••"
+      Object.entries(initial.extraConfig ?? {}).forEach(([k, v]) => { f[k] = String(v) })
     }
-  }, [open, initial])
+    setFields(f)
+    setTestResult(null)
+  } else if (!open && wasOpen) {
+    setWasOpen(false)
+  }
 
   function setField(key: string, val: string) {
     setFields((p) => ({ ...p, [key]: val }))
@@ -249,7 +252,7 @@ export default function DatasourcesPage() {
   const { user, loading } = useUser()
   const router = useRouter()
   const [datasources, setDatasources] = useState<Datasource[]>([])
-  const [fetching, setFetching] = useState(false)
+  const [fetching, setFetching] = useState(true)
   const [formOpen, setFormOpen] = useState(false)
   const [editing, setEditing] = useState<Datasource | undefined>()
 
@@ -258,7 +261,6 @@ export default function DatasourcesPage() {
   }, [user, loading, router])
 
   const fetchDs = useCallback(async () => {
-    setFetching(true)
     try {
       const res = await fetch("/api/datasources")
       if (!res.ok) return

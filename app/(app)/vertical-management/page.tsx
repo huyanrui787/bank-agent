@@ -14,7 +14,6 @@ import {
   TrendingUp,
   UserPlus2,
   Users,
-  X,
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -356,7 +355,7 @@ export default function VerticalManagementPage() {
                 </div>
               </div>
               <p className="text-xs text-muted-foreground">
-                {selectedMonth} · 按{rankBy === "deposit" ? "存款" : "贷款"}增量排序，前十名高亮标注。点击"查看客户"可下钻今年新引入客户清单。
+                {selectedMonth} · 按{rankBy === "deposit" ? "存款" : "贷款"}增量排序，前十名高亮标注。点击「查看客户」可下钻今年新引入客户清单。
               </p>
             </CardHeader>
             <CardContent>

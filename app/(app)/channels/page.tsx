@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react"
 import { Plus, Pencil, Trash2, Wifi, WifiOff, Send, RefreshCw } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -76,14 +76,17 @@ function ChannelForm({
   const [config, setConfig]     = useState<Record<string, string>>({})
   const [saving, setSaving]     = useState(false)
   const [testing, setTesting]   = useState(false)
+  const [wasOpen, setWasOpen]   = useState(open)
 
-  useEffect(() => {
-    if (open) {
-      setName(initial?.name ?? "")
-      setType(initial?.type ?? "wechat_webhook")
-      setConfig(initial?.config ?? {})
-    }
-  }, [open, initial])
+  // 打开时重置表单（渲染期调整状态，避免 effect 内同步 setState）
+  if (open && !wasOpen) {
+    setWasOpen(true)
+    setName(initial?.name ?? "")
+    setType(initial?.type ?? "wechat_webhook")
+    setConfig(initial?.config ?? {})
+  } else if (!open && wasOpen) {
+    setWasOpen(false)
+  }
 
   function setField(key: string, val: string) {
     setConfig((prev) => ({ ...prev, [key]: val }))
@@ -215,7 +218,7 @@ export default function ChannelsPage() {
   const { user, loading } = useUser()
   const router = useRouter()
   const [channels, setChannels] = useState<Channel[]>([])
-  const [fetching, setFetching] = useState(false)
+  const [fetching, setFetching] = useState(true)
   const [formOpen, setFormOpen] = useState(false)
   const [editing, setEditing] = useState<Channel | undefined>()
 
@@ -224,7 +227,6 @@ export default function ChannelsPage() {
   }, [user, loading, router])
 
   const fetchChannels = useCallback(async () => {
-    setFetching(true)
     try {
       const res = await fetch("/api/channels")
       if (!res.ok) return

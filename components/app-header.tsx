@@ -4,7 +4,6 @@ import { Bell, Building2, Shield, LogOut } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { useUser, ROLE_LABELS } from "@/lib/hooks/use-user"
 import { useRouter } from "next/navigation"
-import { toast } from "sonner"
 
 export function AppHeader() {
   const { user, loading } = useUser()

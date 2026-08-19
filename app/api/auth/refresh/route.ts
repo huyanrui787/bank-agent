@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getDb, type DbUser } from "@/lib/db"
-import { verifyRefreshToken, signAccessToken } from "@/lib/auth/jwt"
+import { verifyRefreshToken, signAccessToken, signRefreshToken } from "@/lib/auth/jwt"
 
 export const runtime = "nodejs"
 
@@ -32,6 +32,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "User not found" }, { status: 401 })
   }
 
+  // Rotate：吊销旧 refresh token，签发新的（防止重放）
+  db.prepare("UPDATE refresh_tokens SET revoked = 1 WHERE id = ?").run(payload.jti)
+  const { token: newRefreshToken, jti: newJti } = await signRefreshToken(payload.sub)
+  db.prepare("INSERT INTO refresh_tokens (id, user_id, expires_at) VALUES (?, ?, ?)")
+    .run(newJti, payload.sub, new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString())
+
   const newAccessToken = await signAccessToken({
     sub: user.id,
     name: user.display_name,
@@ -48,6 +54,13 @@ export async function POST(req: NextRequest) {
     sameSite: "lax",
     maxAge: 900,
     path: "/",
+  })
+  res.cookies.set("refresh_token", newRefreshToken, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "strict",
+    maxAge: 7 * 24 * 3600,
+    path: "/api/auth/refresh",
   })
   return res
 }

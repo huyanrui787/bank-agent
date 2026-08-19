@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { z } from "zod"
 import { getDb } from "@/lib/db"
 import { userFromHeaders } from "@/lib/auth/scope"
+import { encryptSecret } from "@/lib/security/encrypt"
 
 export const runtime = "nodejs"
 
@@ -69,7 +70,7 @@ export async function POST(req: NextRequest) {
 
   const { name, type, host, port, databaseName, username, password, extraConfig } = parsed.data
   const id = crypto.randomUUID()
-  const passwordEnc = password ? Buffer.from(password).toString("base64") : null
+  const passwordEnc = password ? encryptSecret(password) : null
 
   const db = getDb()
   db.prepare(

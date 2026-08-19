@@ -18,7 +18,6 @@ type Props = {
 }
 
 export function ChatToolSteps({ steps, streaming }: Props) {
-  const allDone = !streaming && steps.every((s) => s.status === "done")
   const [expanded, setExpanded] = useState(true)
 
   if (!steps.length && !streaming) return null

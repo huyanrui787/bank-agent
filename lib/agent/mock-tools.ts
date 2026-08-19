@@ -7,10 +7,20 @@ import { generateScript } from "@/lib/mock/scripts"
 import { checkAdmissionRules } from "@/lib/mock/admission-rules"
 import type { Customer, CustomerProfile } from "@/lib/mock/types"
 import { detectIntent, extractFilters } from "./intent-router"
-import type { AgentResponse, AgentStep } from "./types"
+import type { AgentResponse, AgentStep, StreamEvent } from "./types"
 
 function step(id: number, title: string, description: string, status: AgentStep["status"] = "done"): AgentStep {
   return { id: String(id), title, description, status }
+}
+
+/** 把 mock 响应包装成与真实 LLM 一致的 SSE 事件流（无网络依赖的确定性兜底）。 */
+export async function* streamMockAgent(message: string): AsyncGenerator<StreamEvent> {
+  const response = runMockAgent(message)
+  response._agent = "mock"
+  for (const s of response.steps) {
+    yield { type: "step", step: s }
+  }
+  yield { type: "done", response }
 }
 
 export function runMockAgent(message: string): AgentResponse {

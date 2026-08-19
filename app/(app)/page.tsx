@@ -6,6 +6,7 @@ import { ChatMessageList } from "@/components/chat/chat-message-list"
 import { ChatInput } from "@/components/chat/chat-input"
 import type { ChatMessage, Conversation, ConversationListItem } from "@/lib/agent/chat-types"
 import type { StreamEvent } from "@/lib/agent/types"
+import { readSse } from "@/lib/agent/sse"
 import {
   loadConversationList,
   loadConversation,
@@ -26,6 +27,7 @@ export default function DashboardPage() {
   const abortRef = useRef<AbortController | null>(null)
 
   useEffect(() => {
+    /* eslint-disable react-hooks/set-state-in-effect -- 客户端挂载后一次性水合 localStorage 会话（SSR 由 mounted 门控） */
     const list = loadConversationList()
     setConvList(list)
     if (list.length > 0) {
@@ -38,6 +40,7 @@ export default function DashboardPage() {
     }
     setLoadedSkillIds(getLoadedSkillIds())
     setMounted(true)
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, [])
 
   const handleUnloadSkill = useCallback((id: string) => {
@@ -138,37 +141,19 @@ export default function DashboardPage() {
 
       if (!res.body) throw new Error("no body")
 
-      const reader = res.body.getReader()
-      const decoder = new TextDecoder()
-      let buf = ""
-
-      while (true) {
-        const { value, done } = await reader.read()
-        if (done) break
-        buf += decoder.decode(value, { stream: true })
-
-        let idx
-        while ((idx = buf.indexOf("\n\n")) !== -1) {
-          const chunk = buf.slice(0, idx)
-          buf = buf.slice(idx + 2)
-          const line = chunk.startsWith("data:") ? chunk.slice(5).trim() : chunk.trim()
-          if (!line) continue
-
-          let event: StreamEvent
-          try { event = JSON.parse(line) } catch { continue }
-
-          if (event.type === "step") {
-            patch((m) => ({ ...m, steps: [...(m.steps ?? []), event.step] }))
-          } else if (event.type === "text_delta") {
-            patch((m) => ({ ...m, content: m.content + event.delta }))
-          } else if (event.type === "done") {
-            const resp = event.response
-            patch((m) => ({ ...m, content: resp.summary, steps: resp.steps, response: resp }))
-            saveConversation(live)
-            setConvList(loadConversationList())
-          } else if (event.type === "error") {
-            patch((m) => ({ ...m, content: `错误：${event.message}` }))
-          }
+      for await (const raw of readSse(res.body)) {
+        const event = raw as StreamEvent
+        if (event.type === "step") {
+          patch((m) => ({ ...m, steps: [...(m.steps ?? []), event.step] }))
+        } else if (event.type === "text_delta") {
+          patch((m) => ({ ...m, content: m.content + event.delta }))
+        } else if (event.type === "done") {
+          const resp = event.response
+          patch((m) => ({ ...m, content: resp.summary, steps: resp.steps, response: resp }))
+          saveConversation(live)
+          setConvList(loadConversationList())
+        } else if (event.type === "error") {
+          patch((m) => ({ ...m, content: `错误：${event.message}` }))
         }
       }
     } catch (err) {

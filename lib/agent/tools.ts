@@ -11,14 +11,11 @@ import { getDb, rowToCustomer, rowToManager, rowToAlert, rowToVisit } from "@/li
 import { buildProfile } from "@/lib/agent/mock-tools"
 import { generateScript } from "@/lib/mock/scripts"
 import { redactForLlm } from "@/lib/auth/desensitize"
+import { decryptSecret } from "@/lib/security/encrypt"
 import type { ToolDef } from "@/lib/agent/llm"
 import type { AgentResultType } from "@/lib/agent/types"
 import type { AgentCtx } from "@/lib/agent/llm-agent"
-import type {
-  Customer,
-  CustomerProfile,
-  Manager,
-} from "@/lib/mock/types"
+import type { CustomerProfile } from "@/lib/mock/types"
 
 export type ToolExecuteResult = {
   textForModel: string
@@ -501,9 +498,7 @@ export const toolHandlers: Record<string, ToolHandler> = {
       const db = getDb()
       const dsRow = db.prepare("SELECT * FROM data_sources WHERE id = ? AND enabled = 1").get(dsId) as Record<string, unknown> | undefined
       if (dsRow) {
-        const password = dsRow.password_enc
-          ? Buffer.from(String(dsRow.password_enc), "base64").toString("utf-8")
-          : undefined
+        const password = decryptSecret(dsRow.password_enc as string | null)
         datasource = {
           type: dsRow.type,
           host: dsRow.host,

@@ -24,7 +24,8 @@ import { Separator } from "@/components/ui/separator"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { CashflowChart } from "@/components/cashflow-chart"
 import type { CustomerProfile } from "@/lib/mock/types"
-import type { AgentResponse } from "@/lib/agent/types"
+import type { AgentResponse, StreamEvent } from "@/lib/agent/types"
+import { readSse } from "@/lib/agent/sse"
 import { formatCurrency, formatDate } from "@/lib/utils"
 import { generateScript, type ScriptScene, type ScriptResult } from "@/lib/mock/scripts"
 
@@ -68,32 +69,17 @@ function AnalysisPageInner() {
         }),
       })
       if (!res.body) throw new Error("no body")
-      const reader = res.body.getReader()
-      const decoder = new TextDecoder()
-      let buf = ""
-      while (true) {
-        const { value, done } = await reader.read()
-        if (done) break
-        buf += decoder.decode(value, { stream: true })
-        let idx
-        while ((idx = buf.indexOf("\n\n")) !== -1) {
-          const chunk = buf.slice(0, idx)
-          buf = buf.slice(idx + 2)
-          const line = chunk.startsWith("data:") ? chunk.slice(5).trim() : chunk.trim()
-          if (!line) continue
-          try {
-            const event = JSON.parse(line)
-            if (event.type === "done") {
-              const data = event.response as AgentResponse
-              if (data.resultType === "profile" || data.resultType === "report") {
-                setProfile(data.data as CustomerProfile)
-              } else if (data.data) {
-                setProfile(data.data as CustomerProfile)
-              } else {
-                toast.error("未识别到客户，请尝试姓名 / 客户编号 / 身份证号 / 地址")
-              }
-            }
-          } catch { /* ignore parse errors */ }
+      for await (const raw of readSse(res.body)) {
+        const event = raw as StreamEvent
+        if (event.type === "done") {
+          const data = event.response as AgentResponse
+          if (data.resultType === "profile" || data.resultType === "report") {
+            setProfile(data.data as CustomerProfile)
+          } else if (data.data) {
+            setProfile(data.data as CustomerProfile)
+          } else {
+            toast.error("未识别到客户，请尝试姓名 / 客户编号 / 身份证号 / 地址")
+          }
         }
       }
     } finally {
@@ -500,10 +486,14 @@ function ScriptsPanel({ customer }: { customer: CustomerProfile["customer"] }) {
   const baseScript = useMemo(() => generateScript(customer, scene), [customer, scene])
   const [script, setScript] = useState<ScriptResult>(baseScript)
   const [regenerating, setRegenerating] = useState(false)
+  const [lastKey, setLastKey] = useState(`${customer.id}-${scene}`)
 
-  useEffect(() => {
+  // 场景 / 客户变化时，在渲染期重置 script（React 官方「渲染期调整状态」模式，避免 effect 内同步 setState）
+  const key = `${customer.id}-${scene}`
+  if (lastKey !== key) {
+    setLastKey(key)
     setScript(baseScript)
-  }, [baseScript])
+  }
 
   async function handleRegenerate() {
     setRegenerating(true)
@@ -511,16 +501,15 @@ function ScriptsPanel({ customer }: { customer: CustomerProfile["customer"] }) {
       const res = await fetch("/api/mock-agent", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          message: `为${customer.name}生成${scene}话术`,
-          forceMock: true,
-        }),
+        body: JSON.stringify({ message: `为${customer.name}生成${scene}话术` }),
       })
-      const data = (await res.json()) as AgentResponse
-      if (data.data && "content" in (data.data as Record<string, unknown>)) {
-        setScript(data.data as unknown as ScriptResult)
-      } else {
-        setScript(generateScript(customer, scene))
+      if (!res.body) throw new Error("no body")
+      for await (const raw of readSse(res.body)) {
+        const event = raw as StreamEvent
+        if (event.type === "done") {
+          // 话术生成工具返回的是确定性 mock（与本地 generateScript 同源），以本地结果为准
+          setScript(generateScript(customer, scene))
+        }
       }
       toast.success("话术已更新")
     } catch {

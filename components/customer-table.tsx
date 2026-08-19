@@ -152,6 +152,7 @@ export function CustomerTable({
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])
   const [globalFilter, setGlobalFilter] = useState("")
 
+  // eslint-disable-next-line react-hooks/incompatible-library -- TanStack Table 与 React Compiler 已知不兼容，编译器会自动跳过本组件
   const table = useReactTable({
     data,
     columns,

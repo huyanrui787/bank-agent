@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { z } from "zod"
 import { getDb } from "@/lib/db"
 import { userFromHeaders } from "@/lib/auth/scope"
+import { encryptSecret } from "@/lib/security/encrypt"
 
 export const runtime = "nodejs"
 
@@ -62,7 +63,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   if (d.username !== undefined)   { sets.push("username = ?");      vals.push(d.username) }
   if (d.password !== undefined && d.password !== "••••••••") {
     sets.push("password_enc = ?")
-    vals.push(d.password ? Buffer.from(d.password).toString("base64") : null)
+    vals.push(d.password ? encryptSecret(d.password) : null)
   }
   if (d.extraConfig !== undefined) { sets.push("extra_config = ?"); vals.push(JSON.stringify(d.extraConfig)) }
   if (d.enabled !== undefined)    { sets.push("enabled = ?");       vals.push(d.enabled ? 1 : 0) }

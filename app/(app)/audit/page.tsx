@@ -49,7 +49,7 @@ export default function AuditPage() {
   const [page, setPage] = useState(1)
   const [pageSize] = useState(50)
   const [actionFilter, setActionFilter] = useState("")
-  const [fetching, setFetching] = useState(false)
+  const [fetching, setFetching] = useState(true)
   const [chainResult, setChainResult] = useState<{ valid: boolean; brokenAt?: string; checked: number } | null>(null)
   const [verifying, setVerifying] = useState(false)
 
@@ -60,7 +60,6 @@ export default function AuditPage() {
   }, [user, loading, router])
 
   const fetchLogs = useCallback(async () => {
-    setFetching(true)
     try {
       const params = new URLSearchParams({
         page: String(page),
@@ -80,9 +79,11 @@ export default function AuditPage() {
   }, [page, pageSize, actionFilter])
 
   useEffect(() => {
+    /* eslint-disable react-hooks/set-state-in-effect -- 挂载/角色就绪后拉取日志（catch 中含 sonner toast 副作用） */
     if (user && ["branch_admin", "compliance"].includes(user.role)) {
       fetchLogs()
     }
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, [fetchLogs, user])
 
   async function verifyChain() {

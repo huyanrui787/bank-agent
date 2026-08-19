@@ -2,10 +2,24 @@ import { callLlm } from "@/lib/agent/llm"
 import { toolHandlers } from "@/lib/agent/tools"
 import { BUILTIN_SKILLS, getSkillPrompts } from "@/lib/agent/skill-store"
 import { getDb } from "@/lib/db"
+import { decryptSecret } from "@/lib/security/encrypt"
+import vm from "node:vm"
 import {
-  WorkflowDefinition, WFNode, WFEdge, WFNodeData,
+  WorkflowDefinition, WFNode, WFEdge,
   NodeRunResult, WorkflowRunEvent, interpolate, topoSort,
 } from "./types"
+
+/** 受限表达式求值：仅暴露插值后的字面量，禁用 process/require 等宿主对象，替代裸 eval。 */
+function evalCondition(expression: string, vars: Record<string, unknown>): boolean {
+  const expr = expression.replace(/\{\{(\w+)\}\}/g, (_, k) => JSON.stringify(vars[k] ?? ""))
+  try {
+    const result = vm.runInNewContext(expr, Object.create(null), { timeout: 100 })
+    return Boolean(result)
+  } catch {
+    const s = expr.trim()
+    return s !== "" && s !== "false" && s !== "0"
+  }
+}
 
 export type ExecuteCtx = {
   userId?: string
@@ -117,7 +131,7 @@ async function runNode(
         const db = getDb()
         const dsRow = db.prepare("SELECT * FROM data_sources WHERE id = ? AND enabled = 1").get(d.datasourceId) as Record<string, unknown> | undefined
         if (dsRow) {
-          const password = dsRow.password_enc ? Buffer.from(String(dsRow.password_enc), "base64").toString("utf-8") : undefined
+          const password = decryptSecret(dsRow.password_enc as string | null)
           body.datasource = { type: dsRow.type, host: dsRow.host, port: dsRow.port, database_name: dsRow.database_name, username: dsRow.username, password, extra_config: JSON.parse(String(dsRow.extra_config || "{}")) }
         }
       }
@@ -133,9 +147,7 @@ async function runNode(
     }
 
     case "condition": {
-      const expr = d.expression ? interpolate(d.expression, vars) : "true"
-      let result = false
-      try { result = !!eval(expr.replace(/{{(\w+)}}/g, (_, k) => JSON.stringify(vars[k] ?? ""))) } catch { result = expr.toLowerCase() !== "false" && expr !== "0" && expr !== "" }
+      const result = evalCondition(d.expression ?? "true", vars)
 
       // Skip edges that don't match
       const outEdges = edges.filter((e) => e.source === node.id)

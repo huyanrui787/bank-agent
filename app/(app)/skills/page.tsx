@@ -194,19 +194,22 @@ function SkillFormSheet({
   const [category, setCategory] = useState("自定义")
   const [prompt, setPrompt] = useState("")
   const [saving, setSaving] = useState(false)
+  const [wasOpen, setWasOpen] = useState(open)
 
-  useEffect(() => {
-    if (open) {
-      setName(initial?.name ?? "")
-      setDescription(initial?.description ?? "")
-      setCategory(initial?.category ?? "自定义")
-      // For builtin, use override if present
-      const p = initial
-        ? (initial.source === "builtin" ? (getSkillPromptOverride(initial.id) ?? initial.prompt) : initial.prompt)
-        : ""
-      setPrompt(p)
-    }
-  }, [open, initial])
+  // 打开时重置表单（渲染期调整状态，避免 effect 内同步 setState）
+  if (open && !wasOpen) {
+    setWasOpen(true)
+    setName(initial?.name ?? "")
+    setDescription(initial?.description ?? "")
+    setCategory(initial?.category ?? "自定义")
+    // For builtin, use override if present
+    const p = initial
+      ? (initial.source === "builtin" ? (getSkillPromptOverride(initial.id) ?? initial.prompt) : initial.prompt)
+      : ""
+    setPrompt(p)
+  } else if (!open && wasOpen) {
+    setWasOpen(false)
+  }
 
   async function handleSave() {
     if (!name.trim()) { toast.error("请填写名称"); return }
@@ -305,9 +308,11 @@ export default function SkillsPage() {
   }, [])
 
   useEffect(() => {
+    /* eslint-disable react-hooks/set-state-in-effect -- 客户端挂载后一次性水合 localStorage 状态（SSR 由 mounted 门控） */
     setLoadedIds(getLoadedSkillIds())
     setMounted(true)
     fetchSkills()
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, [fetchSkills])
 
   function handleToggle(id: string) {
