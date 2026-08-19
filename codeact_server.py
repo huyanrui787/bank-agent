@@ -24,6 +24,11 @@ from pydantic import BaseModel
 BASE_DIR = Path(__file__).parent.resolve()
 DB_PATH = str(BASE_DIR / "data" / "bank.db")
 
+# codeact 子进程硬编码用 "python3"，需让它解析到 venv 里的 python（含 sqlalchemy/
+# pymysql/psycopg2 等多数据源驱动），而不是系统 python3（可能缺驱动）。
+_VENV_BIN = str(BASE_DIR / ".venv" / "bin")
+os.environ["PATH"] = _VENV_BIN + os.pathsep + os.environ.get("PATH", "")
+
 # ── codeact setup ─────────────────────────────────────────────────────────────
 from codeact.config import CodeActConfig
 from codeact.executor import ExecPythonTool, build_sqlite_preamble
@@ -242,6 +247,8 @@ def query_one(sql, params=None):
 def _build_sqlite_file_preamble(ds: "DataSourcePayload") -> str:
     """连接指定的 SQLite 文件（database_name 为文件路径），用于接入独立的外部 SQLite 库。"""
     path = ds.database_name or DB_PATH
+    if not os.path.isabs(path):
+        path = str(BASE_DIR / path)
     return f"""
 # ── External SQLite file datasource ──────────────────────────────────────────
 import sqlite3 as _sqlite3

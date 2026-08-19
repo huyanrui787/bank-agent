@@ -289,6 +289,7 @@ export default function ChannelsPage() {
           <CardContent className="py-14 flex flex-col items-center gap-3 text-muted-foreground">
             <Wifi className="h-10 w-10 opacity-30" />
             <p className="text-sm">还没有配置通知渠道</p>
+            <p className="text-xs text-muted-foreground/70">演示可用 webhook.site 生成临时 URL，作为「自定义 Webhook」地址测试真实推送</p>
             <Button variant="outline" size="sm" onClick={() => { setEditing(undefined); setFormOpen(true) }}>
               <Plus className="h-4 w-4 mr-1" /> 添加第一个渠道
             </Button>

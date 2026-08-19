@@ -6,9 +6,16 @@ import { managers } from "@/lib/mock/managers"
 import { alerts } from "@/lib/mock/alerts"
 import { visits } from "@/lib/mock/visits"
 import { depositProducts, loanProducts } from "@/lib/mock/products"
+import { enterpriseCompanies, enterpriseLoans } from "@/lib/mock/enterprise"
+import { settlementFlows } from "@/lib/mock/settlement"
+import { guarantees } from "@/lib/mock/guarantee"
 import { desensitizeCustomer } from "@/lib/auth/desensitize"
+import { encryptSecret } from "@/lib/security/encrypt"
 
 const DB_PATH = path.join(process.cwd(), "data", "bank.db")
+const ENTERPRISE_DB_PATH = path.join(process.cwd(), "data", "enterprise.db")
+const SETTLEMENT_DB_PATH = path.join(process.cwd(), "data", "settlement.db")
+const GUARANTEE_DB_PATH = path.join(process.cwd(), "data", "guarantee.db")
 
 let _db: Database.Database | null = null
 
@@ -20,6 +27,12 @@ export function getDb(): Database.Database {
   _db.exec(CREATE_TABLES)
   seedIfEmpty(_db)
   seedUsers(_db)
+  seedEnterpriseIfEmpty()
+  seedSettlementIfEmpty()
+  seedGuaranteeIfEmpty()
+  seedDemoDatasources(_db)
+  seedChannels(_db)
+  seedTasks(_db)
   return _db
 }
 
@@ -223,6 +236,183 @@ function seedUsers(db: Database.Database) {
   db.transaction(() => {
     for (const u of users) {
       upsert.run({ ...u, password_hash: DEMO_HASH })
+    }
+  })()
+}
+
+// 生成独立的「企业客户」演示库 data/enterprise.db（供「数据源」模块演示接入外部库）。
+function seedEnterpriseIfEmpty() {
+  const db = new Database(ENTERPRISE_DB_PATH)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS companies (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      industry TEXT NOT NULL,
+      scale TEXT NOT NULL,
+      register_capital_wan REAL NOT NULL,
+      established TEXT,
+      legal_rep TEXT,
+      tax_level TEXT,
+      risk_level TEXT,
+      manager_name TEXT
+    );
+    CREATE TABLE IF NOT EXISTS enterprise_loans (
+      id TEXT PRIMARY KEY,
+      company_id TEXT NOT NULL,
+      loan_type TEXT NOT NULL,
+      amount REAL NOT NULL,
+      rate REAL,
+      start_date TEXT,
+      due_date TEXT,
+      status TEXT
+    );
+  `)
+
+  const count = (db.prepare("SELECT COUNT(*) as n FROM companies").get() as { n: number }).n
+  if (count === 0) {
+    const insertCompany = db.prepare(`
+      INSERT INTO companies
+        (id, name, industry, scale, register_capital_wan, established, legal_rep, tax_level, risk_level, manager_name)
+      VALUES
+        (@id, @name, @industry, @scale, @registerCapitalWan, @established, @legalRep, @taxLevel, @riskLevel, @managerName)
+    `)
+    db.transaction((rows: typeof enterpriseCompanies) => {
+      for (const c of rows) insertCompany.run(c)
+    })(enterpriseCompanies)
+
+    const insertLoan = db.prepare(`
+      INSERT INTO enterprise_loans (id, company_id, loan_type, amount, rate, start_date, due_date, status)
+      VALUES (@id, @companyId, @loanType, @amount, @rate, @startDate, @dueDate, @status)
+    `)
+    db.transaction((rows: typeof enterpriseLoans) => {
+      for (const l of rows) insertLoan.run(l)
+    })(enterpriseLoans)
+  }
+  db.close()
+}
+
+// 生成「对公结算流水」演示库 data/settlement.db。
+function seedSettlementIfEmpty() {
+  const db = new Database(SETTLEMENT_DB_PATH)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS settlement_flows (
+      id TEXT PRIMARY KEY,
+      company_id TEXT NOT NULL,
+      flow_date TEXT,
+      direction TEXT,
+      amount REAL,
+      counterparty TEXT,
+      channel TEXT
+    );
+  `)
+  const count = (db.prepare("SELECT COUNT(*) as n FROM settlement_flows").get() as { n: number }).n
+  if (count === 0) {
+    const insert = db.prepare(`
+      INSERT INTO settlement_flows (id, company_id, flow_date, direction, amount, counterparty, channel)
+      VALUES (@id, @companyId, @flowDate, @direction, @amount, @counterparty, @channel)
+    `)
+    db.transaction((rows: typeof settlementFlows) => {
+      for (const f of rows) insert.run(f)
+    })(settlementFlows)
+  }
+  db.close()
+}
+
+// 生成「担保关系」演示库 data/guarantee.db。
+function seedGuaranteeIfEmpty() {
+  const db = new Database(GUARANTEE_DB_PATH)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS guarantees (
+      id TEXT PRIMARY KEY,
+      company_id TEXT NOT NULL,
+      guarantor_id TEXT,
+      type TEXT,
+      amount REAL,
+      start_date TEXT,
+      end_date TEXT,
+      status TEXT
+    );
+  `)
+  const count = (db.prepare("SELECT COUNT(*) as n FROM guarantees").get() as { n: number }).n
+  if (count === 0) {
+    const insert = db.prepare(`
+      INSERT INTO guarantees (id, company_id, guarantor_id, type, amount, start_date, end_date, status)
+      VALUES (@id, @companyId, @guarantorId, @type, @amount, @startDate, @endDate, @status)
+    `)
+    db.transaction((rows: typeof guarantees) => {
+      for (const g of rows) insert.run(g)
+    })(guarantees)
+  }
+  db.close()
+}
+
+// seed 演示数据源（幂等：缺哪个补哪个，不重复、不覆盖用户自建的）。
+// SQLite 三个零外部依赖；MySQL/PostgreSQL 依赖 Docker 容器（见 README 演示脚本）。
+function seedDemoDatasources(db: Database.Database) {
+  const insert = db.prepare(`
+    INSERT OR IGNORE INTO data_sources
+      (id, name, type, host, port, database_name, username, password_enc, enabled)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `)
+  const datasources = [
+    { id: "DS-enterprise", name: "企业客户库", type: "sqlite", host: null, port: null, db: "data/enterprise.db", user: null, pw: null },
+    { id: "DS-settlement", name: "对公结算流水库", type: "sqlite", host: null, port: null, db: "data/settlement.db", user: null, pw: null },
+    { id: "DS-guarantee", name: "担保关系库", type: "sqlite", host: null, port: null, db: "data/guarantee.db", user: null, pw: null },
+    { id: "DS-mysql", name: "对公信贷库(MySQL)", type: "mysql", host: "127.0.0.1", port: 3306, db: "corp_credit", user: "root", pw: "demo123" },
+    { id: "DS-pg", name: "企业画像库(PostgreSQL)", type: "postgresql", host: "127.0.0.1", port: 5432, db: "corp_profile", user: "postgres", pw: "demo123" },
+  ]
+  db.transaction(() => {
+    for (const ds of datasources) {
+      insert.run(ds.id, ds.name, ds.type, ds.host, ds.port, ds.db, ds.user, ds.pw ? encryptSecret(ds.pw) : null, 1)
+    }
+  })()
+}
+
+// 首次启动时 seed 演示通知渠道（外部依赖的 URL/凭证留空，由使用者填写真实值）。
+function seedChannels(db: Database.Database) {
+  const count = (db.prepare("SELECT COUNT(*) as n FROM notification_channels").get() as { n: number }).n
+  if (count > 0) return
+  const insert = db.prepare(`
+    INSERT INTO notification_channels (id, name, type, enabled, config)
+    VALUES (?, ?, ?, ?, ?)
+  `)
+  const channels = [
+    { id: "CH-wechat", name: "企业微信群机器人", type: "wechat_webhook", config: { webhookUrl: "" } },
+    { id: "CH-sms", name: "短信通知", type: "sms", config: { smsAppKey: "", smsAppSecret: "", smsSignName: "龙湾农商行", smsTemplateCode: "" } },
+    { id: "CH-webhook", name: "自定义演示 Webhook", type: "custom_webhook", config: { url: "" } },
+  ]
+  db.transaction(() => {
+    for (const ch of channels) insert.run(ch.id, ch.name, ch.type, 1, JSON.stringify(ch.config))
+  })()
+}
+
+// 首次启动时为每个内置用户 seed 3 条演示定时任务（每日/每周/每月）。
+function seedTasks(db: Database.Database) {
+  const count = (db.prepare("SELECT COUNT(*) as n FROM tasks").get() as { n: number }).n
+  if (count > 0) return
+  const insert = db.prepare(`
+    INSERT INTO tasks
+      (id, user_id, title, description, trigger_at, recurrence, weekday, month_day, related_customer, enabled, done, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?)
+  `)
+
+  const userIds = ["U001", "U002", "U003", "U004", "U005", "U006", "U007"]
+  const templates = [
+    { title: "存量客户存款到期回访", description: "每日回访即将到期的存量客户，做好续存对接", triggerAt: "2026-08-19T09:00", recurrence: "daily", weekday: null, monthDay: null },
+    { title: "本周新增客户梳理", description: "每周一梳理本周新引入客户，安排跟进", triggerAt: "2026-08-19T09:30", recurrence: "weekly", weekday: 1, monthDay: null },
+    { title: "贷款到期客户排查", description: "每月28日排查下月到期贷款客户，提前安排续作", triggerAt: "2026-08-19T17:00", recurrence: "monthly", weekday: null, monthDay: 28 },
+  ]
+
+  const now = new Date().toISOString()
+  let n = 1
+  db.transaction(() => {
+    for (const uid of userIds) {
+      for (const t of templates) {
+        insert.run(
+          `T${String(n++).padStart(3, "0")}`, uid, t.title, t.description, t.triggerAt,
+          t.recurrence, t.weekday, t.monthDay, null, now
+        )
+      }
     }
   })()
 }
