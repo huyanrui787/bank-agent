@@ -37,7 +37,9 @@ export function shouldFire(task: TaskItem, nowMinute: string): boolean {
 
   switch (task.recurrence) {
     case "none":
-      return task.triggerAt.slice(0, 16) === nowMinute
+      // 一次性任务：<= 当前时间即触发（配合 done/last_fired_at 幂等），
+      // 服务重启后能补触发停机期间错过的到期任务。
+      return task.triggerAt.slice(0, 16) <= nowMinute
     case "daily":
       return timeMatch
     case "weekly": {

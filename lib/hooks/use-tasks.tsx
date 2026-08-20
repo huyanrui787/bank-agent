@@ -8,12 +8,17 @@ import type { TaskItem } from "@/lib/tasks/types"
 export function useTasks() {
   const { user } = useUser()
   const [tasks, setTasks] = useState<TaskItem[]>([])
+  const [channelsEnabled, setChannelsEnabled] = useState(0)
 
   const refresh = useCallback(async () => {
     if (!user?.id) return
     try {
       const res = await fetch("/api/tasks")
-      if (res.ok) setTasks((await res.json()).tasks ?? [])
+      if (res.ok) {
+        const data = await res.json()
+        setTasks(data.tasks ?? [])
+        setChannelsEnabled(data.channelsEnabled ?? 0)
+      }
     } catch { /* 忽略网络错误 */ }
   }, [user])
 
@@ -60,5 +65,5 @@ export function useTasks() {
     return true
   }).length
 
-  return { tasks, addTask, updateTask, deleteTask, toggleEnabled, refresh, todayCount }
+  return { tasks, addTask, updateTask, deleteTask, toggleEnabled, refresh, todayCount, channelsEnabled }
 }

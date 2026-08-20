@@ -98,15 +98,23 @@ export function tickTasks(): TaskItem[] {
   const db = getDb()
   const now = nowMinuteLocal()
   const rows = db.prepare("SELECT * FROM tasks WHERE enabled = 1 AND done = 0").all() as TaskRow[]
-  const fired: TaskItem[] = []
+  const due: TaskItem[] = []
 
   for (const row of rows) {
     const task = rowToTask(row)
-    if (shouldFire(task, now)) {
-      const done = task.recurrence === "none" ? 1 : 0
-      db.prepare("UPDATE tasks SET last_fired_at = ?, done = ? WHERE id = ?").run(now, done, task.id)
-      fired.push({ ...task, lastFiredAt: now, done: done === 1 })
-    }
+    if (shouldFire(task, now)) due.push(task)
   }
-  return fired
+  return due
+}
+
+/**
+ * 提醒送达成功后落库（幂等）：
+ * 一次性任务置 done=1 停止后续触发；重复任务仅记录 last_fired_at 防同分钟重触发。
+ * 送达失败时不调用本函数，任务保持 pending，下个周期自动重试。
+ */
+export function markTaskFired(id: string, done: boolean): void {
+  const now = nowMinuteLocal()
+  getDb()
+    .prepare("UPDATE tasks SET last_fired_at = ?, done = ? WHERE id = ?")
+    .run(now, done ? 1 : 0, id)
 }

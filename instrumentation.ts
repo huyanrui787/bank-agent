@@ -15,12 +15,12 @@ export function register() {
   Promise.all([
     import("@/lib/tasks/store"),
     import("@/lib/channels/dispatch"),
-  ]).then(([{ tickTasks }, { notifyAllChannels }]) => {
+  ]).then(([{ tickTasks, markTaskFired }, { notifyAllChannels, listEnabledChannels }]) => {
     const tick = async () => {
       try {
-        const fired = tickTasks()
-        for (const task of fired) {
-          await notifyAllChannels({
+        const due = tickTasks()
+        for (const task of due) {
+          const results = await notifyAllChannels({
             title: `⏰ 定时任务：${task.title}`,
             content: [
               task.description ? `说明：${task.description}` : null,
@@ -29,6 +29,15 @@ export function register() {
             ].filter(Boolean).join("\n"),
             smsName: task.relatedCustomer,
           })
+          // 仅当至少一个渠道真正送达成功，才标记任务已触发；否则保持 pending 下个周期重试。
+          const delivered = results.length > 0 && results.some((r) => r.status === "success")
+          if (delivered) {
+            markTaskFired(task.id, task.recurrence === "none")
+          } else {
+            console.warn(
+              `[scheduler] 任务「${task.title}」提醒未送达（${results.length === 0 ? "无可用渠道" : "渠道发送失败"}），下个周期重试`
+            )
+          }
         }
       } catch (err) {
         console.error("[scheduler] tick failed:", err)
@@ -36,6 +45,9 @@ export function register() {
     }
 
     console.log("[scheduler] started")
+    if (listEnabledChannels().length === 0) {
+      console.warn("[scheduler] 未配置任何通知渠道：定时任务触发后无法送达提醒，请在「渠道配置」中添加并启用渠道。")
+    }
     tick()
     setInterval(tick, 30_000)
   }).catch((err) => {

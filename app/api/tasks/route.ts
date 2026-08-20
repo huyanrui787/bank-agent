@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { z } from "zod"
 import { userFromHeaders } from "@/lib/auth/scope"
 import { listTasks, createTask } from "@/lib/tasks/store"
+import { listEnabledChannels } from "@/lib/channels/dispatch"
 
 export const runtime = "nodejs"
 
@@ -21,7 +22,10 @@ export async function GET(req: NextRequest) {
   const user = userFromHeaders(req.headers)
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
-  return NextResponse.json({ tasks: listTasks(user.sub) })
+  return NextResponse.json({
+    tasks: listTasks(user.sub),
+    channelsEnabled: listEnabledChannels().length,
+  })
 }
 
 export async function POST(req: NextRequest) {

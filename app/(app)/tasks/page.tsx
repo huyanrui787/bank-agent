@@ -31,7 +31,7 @@ function formatTrigger(task: TaskItem): string {
 }
 
 export default function TasksPage() {
-  const { tasks, addTask, updateTask, deleteTask, toggleEnabled } = useTasks()
+  const { tasks, addTask, updateTask, deleteTask, toggleEnabled, channelsEnabled } = useTasks()
   const [tab, setTab] = useState<"today" | "all">("today")
   const [formOpen, setFormOpen] = useState(false)
   const [editing, setEditing] = useState<TaskItem | undefined>()
@@ -80,6 +80,13 @@ export default function TasksPage() {
           新建任务
         </Button>
       </div>
+
+      {/* 无通知渠道提示：任务不会静默丢失，但触发后无法送达提醒 */}
+      {channelsEnabled === 0 && (
+        <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          尚未配置通知渠道，定时任务触发后将无法发送提醒。请联系管理员在「渠道配置」中添加并启用渠道（企业微信 / 龙龙 / 短信 / 自定义 Webhook）。
+        </div>
+      )}
 
       {/* Tabs */}
       <Tabs value={tab} onValueChange={(v) => setTab(v as typeof tab)}>
