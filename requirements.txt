@@ -12,6 +12,14 @@ pyhive[hive]>=0.7
 impyla>=0.19
 pymilvus>=2.3
 
-# Heavy drivers (optional — uncomment if needed for Oracle/DB2 demos):
-# cx_Oracle>=8.3   # requires Oracle Instant Client
-# ibm_db>=3.2      # requires IBM DB2 client
+# Vector databases
+pgvector>=0.3
+qdrant-client>=1.9
+weaviate-client>=4.6
+chromadb>=0.5
+
+# Heavy drivers — see docs/数据源.md for external client requirements:
+#   oracledb (python-oracledb) -> thin 模式无需客户端；thick 模式需 Oracle Instant Client
+#   ibm_db                      -> 需 IBM DB2 clidriver (libdb2)
+oracledb>=2.0
+ibm_db>=3.2

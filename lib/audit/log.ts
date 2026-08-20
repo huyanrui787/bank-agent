@@ -10,6 +10,7 @@ export type AuditAction =
   | "alert.status.update" | "alert.notification.push"
   | "access.denied"
   | "admin.user.create" | "admin.user.update"
+  | "admin.datasource.create" | "admin.datasource.update" | "admin.datasource.delete"
 
 export type AuditEntry = {
   actorId: string

@@ -4,6 +4,8 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { ChatSidebar } from "@/components/chat/chat-sidebar"
 import { ChatMessageList } from "@/components/chat/chat-message-list"
 import { ChatInput } from "@/components/chat/chat-input"
+import { DatasourceTableSelector, type DatasourceOption } from "@/components/chat/datasource-table-selector"
+import type { TableSchema } from "@/lib/db/schema-info"
 import type { ChatMessage, Conversation, ConversationListItem } from "@/lib/agent/chat-types"
 import type { StreamEvent } from "@/lib/agent/types"
 import { readSse } from "@/lib/agent/sse"
@@ -26,6 +28,26 @@ export default function DashboardPage() {
   const [loadedSkillIds, setLoadedSkillIds] = useState<string[]>([])
   const abortRef = useRef<AbortController | null>(null)
 
+  // ── 数据源 + 选表（NL2SQL：让 AI 自主/手动匹配库表） ───────────────────────
+  const [datasources, setDatasources] = useState<DatasourceOption[]>([])
+  const [selectedDsId, setSelectedDsId] = useState<string | null>(null)
+  const [tables, setTables] = useState<TableSchema[]>([])
+  const [selectedTable, setSelectedTable] = useState<string | null>(null)
+  const [schemaLoading, setSchemaLoading] = useState(false)
+
+  const loadSchema = useCallback(async (dsId: string | null) => {
+    setSchemaLoading(true)
+    setSelectedTable(null)
+    try {
+      const url = dsId ? `/api/datasources/${dsId}/schema` : "/api/schema"
+      const res = await fetch(url)
+      if (!res.ok) { setTables([]); return }
+      const d = await res.json()
+      setTables(d.tables ?? [])
+    } catch { setTables([]) }
+    finally { setSchemaLoading(false) }
+  }, [])
+
   useEffect(() => {
     /* eslint-disable react-hooks/set-state-in-effect -- 客户端挂载后一次性水合 localStorage 会话（SSR 由 mounted 门控） */
     const list = loadConversationList()
@@ -42,6 +64,29 @@ export default function DashboardPage() {
     setMounted(true)
     /* eslint-enable react-hooks/set-state-in-effect */
   }, [])
+
+  // 拉取数据源列表（默认库 + 已配置的数据源）
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch("/api/datasources")
+        if (!res.ok) return
+        const d = await res.json()
+        setDatasources([
+          { id: null, name: "默认客户库（bank.db）", type: "sqlite" },
+          ...((d.datasources ?? []) as { id: string; name: string; type: string }[])
+            .map((ds) => ({ id: ds.id, name: ds.name, type: ds.type })),
+        ])
+      } catch { /* ignore */ }
+    })()
+  }, [])
+
+  // 数据源变化时加载其表结构（首帧即拉默认库，故同步触发 loading/重置选中表）
+  useEffect(() => {
+    /* eslint-disable react-hooks/set-state-in-effect -- 数据源切换需同步重置选中表并置 loading，属外部数据同步而非派生状态 */
+    loadSchema(selectedDsId)
+    /* eslint-enable react-hooks/set-state-in-effect */
+  }, [selectedDsId, loadSchema])
 
   const handleUnloadSkill = useCallback((id: string) => {
     setLoadedSkillIds(toggleSkill(id))
@@ -135,6 +180,8 @@ export default function DashboardPage() {
               .map((s) => [s.id, getSkillPromptOverride(s.id)])
               .filter(([, v]) => v !== null)
           ),
+          datasourceId: selectedDsId ?? undefined,
+          selectedTable: selectedTable ?? undefined,
         }),
         signal: ac.signal,
       })
@@ -164,7 +211,7 @@ export default function DashboardPage() {
       setStreamingId(null)
       setLoading(false)
     }
-  }, [currentConv])
+  }, [currentConv, selectedDsId, selectedTable])
 
   if (!mounted) return null
 
@@ -183,6 +230,15 @@ export default function DashboardPage() {
           loading={false}
           streamingId={streamingId}
           onSendAction={handleSend}
+        />
+        <DatasourceTableSelector
+          datasources={datasources}
+          selectedDsId={selectedDsId}
+          onSelectDs={setSelectedDsId}
+          tables={tables}
+          selectedTable={selectedTable}
+          onSelectTable={setSelectedTable}
+          loading={schemaLoading}
         />
         <ChatInput
           onSend={handleSend}

@@ -10,10 +10,15 @@ import { buildSystemPrompt, toolDefs, toolHandlers } from "./tools"
 import type { AgentResponse, AgentStep, AgentResultType, Intent, StreamEvent } from "./types"
 import type { AccessTokenPayload } from "@/lib/auth/jwt"
 import type { DataScope } from "@/lib/auth/scope"
+import type { DbSchema } from "@/lib/db/schema-info"
 
 export type AgentCtx = {
   user: Pick<AccessTokenPayload, "sub" | "name" | "role" | "branch" | "managerId">
   scope: DataScope
+  /** 当前数据源的数据字典（表 + 字段），注入 System Prompt 用于 NL2SQL 选表 */
+  schema?: DbSchema
+  /** 用户当前选中的表（用于把该表排前并标注，未选则 LLM 自主选表） */
+  focusTable?: string | null
 }
 
 const MAX_TOOL_TURNS = 4

@@ -1,0 +1,139 @@
+# bank-agent 数据源演示库编排
+# 默认组（轻量，`docker compose -f docker-compose.databases.yml up -d`）：
+#   MySQL / pgvector / Elasticsearch / Qdrant / Weaviate / Chroma / Milvus
+# 重量组（`--profile heavy`）：SQL Server / Oracle / DB2（镜像大、首次启动慢，建议逐个测）
+#
+# 端口避开已有 bank-demo-postgres(5432) 与 bank-agent-prod-db(5433)。
+# PostgreSQL 复用已有的 bank-demo-postgres(5432, corp_profile)，此处不重复起。
+
+name: bank-datasources
+
+services:
+  # ── 关系型 / SQL ─────────────────────────────────────────────────────────
+  mysql:
+    image: mysql:8
+    container_name: bank-ds-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: demo123
+      MYSQL_DATABASE: corp_credit
+    ports:
+      - "3306:3306"
+    mem_limit: 512m
+
+  pgvector:
+    image: pgvector/pgvector:pg16
+    container_name: bank-ds-pgvector
+    environment:
+      POSTGRES_PASSWORD: demo123
+      POSTGRES_DB: vector_demo
+    ports:
+      - "5434:5432"
+    mem_limit: 256m
+
+  # ── 搜索引擎 ─────────────────────────────────────────────────────────────
+  elasticsearch:
+    image: elasticsearch:8.11.3
+    container_name: bank-ds-elasticsearch
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - ES_JAVA_OPTS=-Xms256m -Xmx512m
+    ports:
+      - "9200:9200"
+    mem_limit: 1g
+
+  # ── 向量数据库 ───────────────────────────────────────────────────────────
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: bank-ds-qdrant
+    ports:
+      - "6333:6333"
+    mem_limit: 512m
+
+  weaviate:
+    image: semitechnologies/weaviate:1.24.10
+    container_name: bank-ds-weaviate
+    environment:
+      - AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED=true
+      - QUERY_DEFAULTS_LIMIT=25
+    ports:
+      - "8080:8080"
+      - "50051:50051"
+    mem_limit: 512m
+
+  chroma:
+    image: chromadb/chroma:0.5.5
+    container_name: bank-ds-chroma
+    ports:
+      - "8000:8000"
+    mem_limit: 512m
+
+  # Milvus standalone（etcd + minio + milvus）
+  etcd:
+    image: quay.io/coreos/etcd:v3.5.14
+    container_name: bank-ds-etcd
+    environment:
+      - ETCD_AUTO_COMPACTION_MODE=revision
+      - ETCD_AUTO_COMPACTION_RETENTION=1000
+      - ETCD_QUOTA_BACKEND_BYTES=4294967296
+    command: etcd -advertise-client-urls=http://127.0.0.1:2379 -listen-client-urls http://0.0.0.0:2379 --data-dir /etcd
+    mem_limit: 256m
+
+  minio:
+    image: minio/minio:RELEASE.2023-03-20T20-16-18Z
+    container_name: bank-ds-minio
+    environment:
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+    command: minio server /minio_data --console-address ":9001"
+    mem_limit: 256m
+
+  milvus:
+    image: milvusdb/milvus:v2.4.13
+    container_name: bank-ds-milvus
+    command: ["milvus", "run", "standalone"]
+    environment:
+      ETCD_ENDPOINTS: etcd:2379
+      MINIO_ADDRESS: minio:9000
+    ports:
+      - "19530:19530"
+    depends_on:
+      - etcd
+      - minio
+    mem_limit: 2g
+
+  # ── 重量组（--profile heavy）───────────────────────────────────────────
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: bank-ds-sqlserver
+    profiles: ["heavy"]
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: "Demo@12345"
+      MSSQL_PID: "Developer"
+    ports:
+      - "1433:1433"
+    mem_limit: 2g
+
+  oracle:
+    image: gvenzl/oracle-free:23-slim
+    container_name: bank-ds-oracle
+    profiles: ["heavy"]
+    environment:
+      ORACLE_PASSWORD: demo1234
+    ports:
+      - "1521:1521"
+    mem_limit: 2g
+
+  db2:
+    image: icr.io/db2_community/db2:11.5.9.0
+    container_name: bank-ds-db2
+    profiles: ["heavy"]
+    privileged: true
+    environment:
+      LICENSE: accept
+      DB2INST1_PASSWORD: demo12345
+      DBNAME: demo
+    ports:
+      - "50000:50000"
+    mem_limit: 2g

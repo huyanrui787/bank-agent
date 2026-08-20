@@ -3,6 +3,7 @@ import { z } from "zod"
 import { getDb } from "@/lib/db"
 import { userFromHeaders } from "@/lib/auth/scope"
 import { encryptSecret } from "@/lib/security/encrypt"
+import { writeAuditLog } from "@/lib/audit/log"
 
 export const runtime = "nodejs"
 
@@ -70,6 +71,22 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
   vals.push(id)
   db.prepare(`UPDATE data_sources SET ${sets.join(", ")} WHERE id = ?`).run(...vals)
+
+  const changed = Object.keys(parsed.data).filter((k) => k !== "password")
+  writeAuditLog({
+    actorId: user.sub,
+    actorName: user.name,
+    actorRole: user.role,
+    actorBranch: user.branch,
+    action: "admin.datasource.update",
+    resourceType: "datasource",
+    resourceId: id,
+    summary: `${user.name} 更新数据源 ${id}`,
+    detail: { changedFields: changed },
+    ipAddress: req.headers.get("x-forwarded-for") ?? null,
+    requestId: req.headers.get("x-request-id") ?? null,
+    dataScope: null,
+  })
   return NextResponse.json({ ok: true })
 }
 
@@ -79,6 +96,24 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   if (user.role !== "branch_admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 })
 
-  getDb().prepare("DELETE FROM data_sources WHERE id = ?").run(id)
+  const db = getDb()
+  const row = db.prepare("SELECT name, type FROM data_sources WHERE id = ?").get(id) as { name: string; type: string } | undefined
+  db.prepare("DELETE FROM data_sources WHERE id = ?").run(id)
+
+  if (row) {
+    writeAuditLog({
+      actorId: user.sub,
+      actorName: user.name,
+      actorRole: user.role,
+      actorBranch: user.branch,
+      action: "admin.datasource.delete",
+      resourceType: "datasource",
+      resourceId: id,
+      summary: `${user.name} 删除数据源「${row.name}」（${row.type}）`,
+      ipAddress: req.headers.get("x-forwarded-for") ?? null,
+      requestId: req.headers.get("x-request-id") ?? null,
+      dataScope: null,
+    })
+  }
   return NextResponse.json({ ok: true })
 }

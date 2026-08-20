@@ -1,6 +1,6 @@
 import Database from "better-sqlite3"
 import path from "path"
-import { CREATE_TABLES } from "./schema"
+import { CREATE_TABLES, DATA_SOURCE_TYPES } from "./schema"
 import { customers } from "@/lib/mock/customers"
 import { managers } from "@/lib/mock/managers"
 import { alerts } from "@/lib/mock/alerts"
@@ -25,6 +25,7 @@ export function getDb(): Database.Database {
   _db.pragma("journal_mode = WAL")
   _db.pragma("foreign_keys = ON")
   _db.exec(CREATE_TABLES)
+  migrateDataSourceTypes(_db)
   seedIfEmpty(_db)
   seedUsers(_db)
   seedEnterpriseIfEmpty()
@@ -34,6 +35,38 @@ export function getDb(): Database.Database {
   seedChannels(_db)
   seedTasks(_db)
   return _db
+}
+
+// 迁移：data_sources 表新增向量库类型后，旧库的 CHECK 约束不会自动更新。
+// 检测到缺失类型时重建表（保留已有数据），使新类型可写入。
+function migrateDataSourceTypes(db: Database.Database) {
+  const ddl = (db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='data_sources'").get() as { sql: string } | undefined)?.sql ?? ""
+  if (DATA_SOURCE_TYPES.every((t) => ddl.includes(`'${t}'`))) return
+
+  const typeSql = DATA_SOURCE_TYPES.map((t) => `'${t}'`).join(",")
+  db.exec(`
+    CREATE TABLE data_sources_new (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      type TEXT NOT NULL CHECK(type IN (${typeSql})),
+      host TEXT,
+      port INTEGER,
+      database_name TEXT,
+      username TEXT,
+      password_enc TEXT,
+      extra_config TEXT DEFAULT '{}',
+      enabled INTEGER DEFAULT 1,
+      created_by TEXT,
+      created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    );
+    INSERT INTO data_sources_new
+      (id,name,type,host,port,database_name,username,password_enc,extra_config,enabled,created_by,created_at,updated_at)
+      SELECT id,name,type,host,port,database_name,username,password_enc,extra_config,enabled,created_by,created_at,updated_at
+      FROM data_sources;
+    DROP TABLE data_sources;
+    ALTER TABLE data_sources_new RENAME TO data_sources;
+  `)
 }
 
 function seedIfEmpty(db: Database.Database) {

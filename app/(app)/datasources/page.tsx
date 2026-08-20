@@ -12,7 +12,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter } from "@/com
 import { useUser } from "@/lib/hooks/use-user"
 import { useRouter } from "next/navigation"
 
-type DsType = "sqlite"|"mysql"|"postgresql"|"sqlserver"|"oracle"|"db2"|"hive"|"impala"|"elasticsearch"|"dtsql"|"vector_pgvector"|"vector_milvus"
+type DsType = "sqlite"|"mysql"|"postgresql"|"sqlserver"|"oracle"|"db2"|"hive"|"impala"|"elasticsearch"|"dtsql"|"vector_pgvector"|"vector_milvus"|"vector_qdrant"|"vector_weaviate"|"vector_chroma"
 
 type Datasource = {
   id: string; name: string; type: DsType
@@ -35,6 +35,9 @@ const TYPE_LABELS: Record<DsType, string> = {
   dtsql:           "DTSQL（自建）",
   vector_pgvector: "pgvector（向量）",
   vector_milvus:   "Milvus（向量）",
+  vector_qdrant:   "Qdrant（向量）",
+  vector_weaviate: "Weaviate（向量）",
+  vector_chroma:   "Chroma（向量）",
 }
 
 const TYPE_COLORS: Record<DsType, string> = {
@@ -50,6 +53,9 @@ const TYPE_COLORS: Record<DsType, string> = {
   dtsql: "bg-purple-50 text-purple-700",
   vector_pgvector: "bg-violet-50 text-violet-700",
   vector_milvus: "bg-indigo-50 text-indigo-700",
+  vector_qdrant: "bg-fuchsia-50 text-fuchsia-700",
+  vector_weaviate: "bg-emerald-50 text-emerald-700",
+  vector_chroma: "bg-cyan-50 text-cyan-700",
 }
 
 // ── Field definitions per type ────────────────────────────────────────────────
@@ -73,6 +79,21 @@ function getFields(t: DsType): FieldDef[] {
     { key: "port", label: "端口", placeholder: "19530", type: "number" },
     { key: "token", label: "Token（可选）", placeholder: "", extra: true },
   ]
+  if (t === "vector_qdrant") return [
+    { key: "url", label: "连接地址", placeholder: "http://localhost:6333", extra: true },
+    { key: "api_key", label: "API Key（可选）", placeholder: "", extra: true },
+  ]
+  if (t === "vector_weaviate") return [
+    { key: "host", label: "主机", placeholder: "localhost" },
+    { key: "port", label: "HTTP 端口", placeholder: "8080", type: "number" },
+    { key: "grpc_port", label: "gRPC 端口", placeholder: "50051", type: "number", extra: true },
+    { key: "api_key", label: "API Key（可选）", placeholder: "", extra: true },
+  ]
+  if (t === "vector_chroma") return [
+    { key: "host", label: "主机", placeholder: "localhost" },
+    { key: "port", label: "端口", placeholder: "8000", type: "number" },
+    { key: "path", label: "本地路径（可选，本地持久化）", placeholder: "/path/to/chroma", extra: true },
+  ]
   // SQL-based: mysql/postgresql/sqlserver/oracle/db2/hive/impala/vector_pgvector
   const defaults: FieldDef[] = [
     { key: "host", label: "主机地址", placeholder: "localhost" },
@@ -91,6 +112,7 @@ function defaultPort(t: DsType): string {
     mysql: "3306", postgresql: "5432", sqlserver: "1433",
     oracle: "1521", db2: "50000", hive: "10000", impala: "21050",
     vector_pgvector: "5432",
+    vector_qdrant: "6333", vector_weaviate: "8080", vector_chroma: "8000",
   }
   return ports[t] ?? "5432"
 }

@@ -1,4 +1,4 @@
-import { customers, findCustomer } from "@/lib/mock/customers"
+import { customers } from "@/lib/mock/customers"
 import { managers } from "@/lib/mock/managers"
 import { alerts } from "@/lib/mock/alerts"
 import { depositProducts, loanProducts } from "@/lib/mock/products"
@@ -6,6 +6,8 @@ import { visits } from "@/lib/mock/visits"
 import { generateScript } from "@/lib/mock/scripts"
 import { checkAdmissionRules } from "@/lib/mock/admission-rules"
 import type { Customer, CustomerProfile } from "@/lib/mock/types"
+import type { AccessTokenPayload } from "@/lib/auth/jwt"
+import type { DataScope } from "@/lib/auth/scope"
 import { detectIntent, extractFilters } from "./intent-router"
 import type { AgentResponse, AgentStep, StreamEvent } from "./types"
 
@@ -13,9 +15,46 @@ function step(id: number, title: string, description: string, status: AgentStep[
   return { id: String(id), title, description, status }
 }
 
+export type MockAgentCtx = {
+  user: Pick<AccessTokenPayload, "name" | "branch" | "managerId">
+  scope: DataScope
+}
+
+/** 在内存 mock 数据上按数据范围过滤（与 buildScope 语义一致：personal / branch / bank）。 */
+function applyScope(ctx?: MockAgentCtx) {
+  const type = ctx?.scope?.type ?? "bank"
+  const name = ctx?.user?.name ?? null
+  const branch = ctx?.user?.branch ?? null
+  const managerId = ctx?.user?.managerId ?? null
+
+  const cs =
+    type === "personal" ? customers.filter((c) => c.managerName === name)
+    : type === "branch" ? customers.filter((c) => c.branch === branch)
+    : customers
+  const ms =
+    type === "personal" ? managers.filter((m) => m.name === name || m.id === managerId)
+    : type === "branch" ? managers.filter((m) => m.branch === branch)
+    : managers
+  const branchManagers = new Set(managers.filter((m) => m.branch === branch).map((m) => m.name))
+  const as =
+    type === "personal" ? alerts.filter((a) => a.managerName === name)
+    : type === "branch" ? alerts.filter((a) => branchManagers.has(a.managerName ?? ""))
+    : alerts
+  return { cs, ms, as }
+}
+
+/** 在已过滤的客户集合内定位客户（编号/姓名精确 → 姓名包含），找不到返回 undefined。 */
+function locateCustomer(message: string, cs: Customer[]): Customer | undefined {
+  const tokens = message.split(/[\s,，。、]+/).filter(Boolean)
+  return (
+    cs.find((c) => tokens.some((t) => c.id === t || c.id === t.toUpperCase() || c.name === t)) ??
+    cs.find((c) => tokens.some((t) => c.name.includes(t)))
+  )
+}
+
 /** 把 mock 响应包装成与真实 LLM 一致的 SSE 事件流（无网络依赖的确定性兜底）。 */
-export async function* streamMockAgent(message: string): AsyncGenerator<StreamEvent> {
-  const response = runMockAgent(message)
+export async function* streamMockAgent(message: string, ctx?: MockAgentCtx): AsyncGenerator<StreamEvent> {
+  const response = runMockAgent(message, ctx)
   response._agent = "mock"
   for (const s of response.steps) {
     yield { type: "step", step: s }
@@ -23,24 +62,24 @@ export async function* streamMockAgent(message: string): AsyncGenerator<StreamEv
   yield { type: "done", response }
 }
 
-export function runMockAgent(message: string): AgentResponse {
+export function runMockAgent(message: string, ctx?: MockAgentCtx): AgentResponse {
   const intent = detectIntent(message)
 
   switch (intent) {
     case "customer_segment":
-      return handleSegment(message)
+      return handleSegment(message, ctx)
     case "vertical_management":
-      return handleVertical()
+      return handleVertical(ctx)
     case "business_alert":
-      return handleAlert()
+      return handleAlert(ctx)
     case "customer_analysis":
-      return handleAnalysis(message)
+      return handleAnalysis(message, ctx)
     case "generate_report":
-      return handleReport(message)
+      return handleReport(message, ctx)
     case "generate_script":
-      return handleScript(message)
+      return handleScript(message, ctx)
     case "query_database":
-      return handleQuery(message)
+      return handleQuery(message, ctx)
     case "export_data":
       return handleExport()
     default:
@@ -48,9 +87,10 @@ export function runMockAgent(message: string): AgentResponse {
   }
 }
 
-function handleSegment(message: string): AgentResponse {
+function handleSegment(message: string, ctx?: MockAgentCtx): AgentResponse {
   const filters = extractFilters(message)
-  let list = customers
+  const { cs } = applyScope(ctx)
+  let list = cs
   const conditions: string[] = []
 
   if (filters.community) {
@@ -70,8 +110,8 @@ function handleSegment(message: string): AgentResponse {
     conditions.push(filters.unusedCredit ? "有效合同·未用信" : "有效合同")
   }
 
-  if (list.length === customers.length) {
-    list = customers.filter((c) => c.avgDeposit >= 100_000).slice(0, 24)
+  if (list.length === cs.length) {
+    list = cs.filter((c) => c.avgDeposit >= 100_000).slice(0, 24)
     conditions.push("默认条件：日均存款≥¥100,000")
   }
 
@@ -83,7 +123,7 @@ function handleSegment(message: string): AgentResponse {
     steps: [
       step(1, "识别需求", "识别为客群梳理任务"),
       step(2, "匹配字段", `提取条件：${conditions.join("、") || "无明确条件"}`),
-      step(3, "查询客户库", `共扫描 ${customers.length} 位客户`),
+      step(3, "查询客户库", `共扫描 ${cs.length} 位客户`),
       step(4, "生成清单", `筛选出 ${list.length} 位匹配客户，截取前 ${top.length} 位展示`),
       step(5, "准备导出", "可一键导出为 CSV / Excel"),
     ],
@@ -93,12 +133,13 @@ function handleSegment(message: string): AgentResponse {
   }
 }
 
-function handleVertical(): AgentResponse {
-  const ranking = [...managers].sort((a, b) => b.monthlyDepositIncrease - a.monthlyDepositIncrease)
-  const totalNewCustomers = managers.reduce((s, m) => s + m.monthlyNewCustomers, 0)
+function handleVertical(ctx?: MockAgentCtx): AgentResponse {
+  const { ms } = applyScope(ctx)
+  const ranking = [...ms].sort((a, b) => b.monthlyDepositIncrease - a.monthlyDepositIncrease)
+  const totalNewCustomers = ms.reduce((s, m) => s + m.monthlyNewCustomers, 0)
   return {
     intent: "vertical_management",
-    summary: `已统计 ${managers.length} 位客户经理本月业绩，新增客户合计 ${totalNewCustomers} 户。`,
+    summary: `已统计 ${ms.length} 位客户经理本月业绩，新增客户合计 ${totalNewCustomers} 户。`,
     steps: [
       step(1, "识别需求", "识别为垂直管理任务"),
       step(2, "汇总指标", "汇总各经理新增客户、存贷增长、维护得分"),
@@ -111,19 +152,20 @@ function handleVertical(): AgentResponse {
   }
 }
 
-function handleAlert(): AgentResponse {
-  const sorted = [...alerts].sort((a, b) => {
+function handleAlert(ctx?: MockAgentCtx): AgentResponse {
+  const { as } = applyScope(ctx)
+  const sorted = [...as].sort((a, b) => {
     const sev = { critical: 0, warning: 1, info: 2 } as const
     return sev[a.severity] - sev[b.severity]
   })
-  const criticalCount = alerts.filter((a) => a.severity === "critical").length
+  const criticalCount = as.filter((a) => a.severity === "critical").length
   return {
     intent: "business_alert",
-    summary: `共扫描出 ${alerts.length} 条预警，其中紧急 ${criticalCount} 条需要立即处理。`,
+    summary: `共扫描出 ${as.length} 条预警，其中紧急 ${criticalCount} 条需要立即处理。`,
     steps: [
       step(1, "识别需求", "识别为业务预警任务"),
       step(2, "扫描多源数据", "扫描存款、贷款、融资、网格、支行数据"),
-      step(3, "聚合预警", `生成 ${alerts.length} 条预警事件`),
+      step(3, "聚合预警", `生成 ${as.length} 条预警事件`),
       step(4, "排序分发", "按严重度排序，分发至对应客户经理"),
     ],
     resultType: "alert",
@@ -132,13 +174,22 @@ function handleAlert(): AgentResponse {
   }
 }
 
-function handleAnalysis(message: string): AgentResponse {
-  const customer =
-    findCustomer(message) ??
-    customers.find((c) =>
-      message.split(/[\s,，。]+/).some((token) => token && c.name.includes(token))
-    ) ??
-    customers[0]
+function handleAnalysis(message: string, ctx?: MockAgentCtx): AgentResponse {
+  const { cs } = applyScope(ctx)
+  const customer = locateCustomer(message, cs)
+  if (!customer) {
+    return {
+      intent: "customer_analysis",
+      summary: "未在你的数据权限范围内找到客户，请确认姓名或编号。",
+      steps: [
+        step(1, "识别需求", "识别为客户画像分析任务"),
+        step(2, "定位客户", "未命中可访问的客户", "error"),
+      ],
+      resultType: "empty",
+      data: null,
+      suggestedNextActions: ["分析张明的风险情况"],
+    }
+  }
 
   const profile = buildProfile(customer.id)
 
@@ -157,13 +208,22 @@ function handleAnalysis(message: string): AgentResponse {
   }
 }
 
-function handleReport(message: string): AgentResponse {
-  const customer =
-    findCustomer(message) ??
-    customers.find((c) =>
-      message.split(/[\s,，。]+/).some((token) => token && c.name.includes(token))
-    ) ??
-    customers[0]
+function handleReport(message: string, ctx?: MockAgentCtx): AgentResponse {
+  const { cs } = applyScope(ctx)
+  const customer = locateCustomer(message, cs)
+  if (!customer) {
+    return {
+      intent: "generate_report",
+      summary: "未在你的数据权限范围内找到客户，无法生成调查报告。",
+      steps: [
+        step(1, "识别需求", "识别为调查报告生成任务"),
+        step(2, "定位客户", "未命中可访问的客户", "error"),
+      ],
+      resultType: "empty",
+      data: null,
+      suggestedNextActions: ["分析张明的风险情况"],
+    }
+  }
   const profile = buildProfile(customer.id)
   return {
     intent: "generate_report",
@@ -199,13 +259,22 @@ function handleExport(): AgentResponse {
   }
 }
 
-function handleScript(message: string): AgentResponse {
-  const customer =
-    findCustomer(message) ??
-    customers.find((c) =>
-      message.split(/[\s,，。]+/).some((token) => token && c.name.includes(token))
-    ) ??
-    customers[0]
+function handleScript(message: string, ctx?: MockAgentCtx): AgentResponse {
+  const { cs } = applyScope(ctx)
+  const customer = locateCustomer(message, cs)
+  if (!customer) {
+    return {
+      intent: "generate_script",
+      summary: "未在你的数据权限范围内找到客户，无法生成话术。",
+      steps: [
+        step(1, "识别需求", "识别为话术生成任务"),
+        step(2, "定位客户", "未命中可访问的客户", "error"),
+      ],
+      resultType: "empty",
+      data: null,
+      suggestedNextActions: ["分析张明的风险情况"],
+    }
+  }
 
   const result = generateScript(customer, message)
 
@@ -237,7 +306,8 @@ ${result.tips.map((t) => `- ${t}`).join("\n")}`
   }
 }
 
-function handleQuery(message: string): AgentResponse {
+function handleQuery(message: string, ctx?: MockAgentCtx): AgentResponse {
+  const { cs, ms, as } = applyScope(ctx)
   let table = "customers"
   let data: unknown = []
   let tableLabel = "客户"
@@ -245,12 +315,10 @@ function handleQuery(message: string): AgentResponse {
   if (message.includes("走访") || message.includes("拜访")) {
     table = "visits"
     tableLabel = "走访记录"
-    const customerMatch = customers.find((c) =>
-      message.split(/[\s,，。]+/).some((token) => token && c.name.includes(token))
-    )
+    const customerMatch = locateCustomer(message, cs)
     data = customerMatch
       ? visits.filter((v) => v.customerId === customerMatch.id)
-      : visits
+      : visits.filter((v) => cs.some((c) => c.id === v.customerId))
   } else if (message.includes("产品") || message.includes("理财") || message.includes("存款产品")) {
     table = "products"
     tableLabel = "产品"
@@ -258,13 +326,13 @@ function handleQuery(message: string): AgentResponse {
   } else if (message.includes("经理") || message.includes("绩效")) {
     table = "managers"
     tableLabel = "客户经理"
-    data = managers
+    data = ms
   } else if (message.includes("预警")) {
     table = "alerts"
     tableLabel = "预警"
-    data = alerts.slice(0, 20)
+    data = as.slice(0, 20)
   } else {
-    data = customers.filter((c) => c.riskLevel === "high").slice(0, 20)
+    data = cs.filter((c) => c.riskLevel === "high").slice(0, 20)
     tableLabel = "高风险客户"
   }
 

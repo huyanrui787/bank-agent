@@ -11,6 +11,7 @@
 - 查询分析：客户 360° 画像（风险、准入、流水、推荐、报告）
 - Skill Center：7 个内置技能卡片，演示 Agentic 工具调用
 - Excel / CSV 导出：`/api/export?type={customers|managers|alerts}&format={xlsx|csv}`，xlsx 走 ExcelJS，带表头样式 / 冻结首行 / 自动筛选 / 列宽 / 斑马纹
+- 多数据源接入：SQLite / MySQL / PostgreSQL / SQL Server / Oracle / DB2 / Hive / Impala / Elasticsearch / DTSQL / 向量库（pgvector·Milvus·Qdrant·Weaviate·Chroma），经 Python codeact sidecar 跨库执行查询与向量检索，详见 [docs/数据源.md](docs/数据源.md)
 
 ## 技术栈
 

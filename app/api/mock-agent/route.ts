@@ -6,6 +6,8 @@ import { getSkillPrompts, BUILTIN_SKILLS } from "@/lib/agent/skill-store"
 import { userFromHeaders, buildScope } from "@/lib/auth/scope"
 import { writeAuditLog } from "@/lib/audit/log"
 import { getDb } from "@/lib/db"
+import { getDefaultSchema, type DbSchema } from "@/lib/db/schema-info"
+import { resolveDatasourceSchema } from "@/lib/db/datasource-schema"
 import type { StreamEvent, AgentResponse } from "@/lib/agent/types"
 import type { Skill } from "@/lib/agent/skill-store"
 
@@ -13,6 +15,8 @@ const schema = z.object({
   message: z.string().min(1).max(500),
   skillIds: z.array(z.string()).optional(),
   skillOverrides: z.record(z.string(), z.string()).optional(),
+  datasourceId: z.string().optional(),
+  selectedTable: z.string().optional(),
 })
 
 export const runtime = "nodejs"
@@ -35,7 +39,7 @@ export async function POST(req: NextRequest) {
     return new Response(JSON.stringify({ error: "invalid_input" }), { status: 400 })
   }
 
-  const { message, skillIds = [], skillOverrides = {} } = parsed.data
+  const { message, skillIds = [], skillOverrides = {}, datasourceId, selectedTable } = parsed.data
 
   // Merge builtin + custom skills for prompt resolution
   const db = getDb()
@@ -52,6 +56,14 @@ export async function POST(req: NextRequest) {
   ]
   const skillPrompts = getSkillPrompts(skillIds, allSkills)
   const scope = buildScope(user)
+
+  // 解析当前数据源的数据字典（服务端权威，客户端只传 datasourceId / selectedTable）
+  let schemaCtx: DbSchema | undefined
+  try {
+    schemaCtx = datasourceId ? (await resolveDatasourceSchema(datasourceId)) ?? undefined : getDefaultSchema()
+  } catch {
+    schemaCtx = undefined
+  }
   const requestId = req.headers.get("x-request-id") ?? crypto.randomUUID()
   const ip = req.headers.get("x-forwarded-for") ?? null
 
@@ -65,20 +77,20 @@ export async function POST(req: NextRequest) {
 
       try {
         if (useMock) {
-          for await (const event of streamMockAgent(message)) {
+          for await (const event of streamMockAgent(message, { user, scope })) {
             enqueue(event)
             if (event.type === "done") finalResponse = event.response
           }
         } else {
           try {
-            for await (const event of streamLlmAgent(message, skillPrompts, { user, scope })) {
+            for await (const event of streamLlmAgent(message, skillPrompts, { user, scope, schema: schemaCtx, focusTable: selectedTable ?? null })) {
               enqueue(event)
               if (event.type === "done") finalResponse = event.response
             }
           } catch (err) {
             // LLM 运行时失败 → 自动降级到 deterministic mock，保证现场演示稳定
             const errMsg = err instanceof Error ? err.message : String(err)
-            for await (const event of streamMockAgent(message)) {
+            for await (const event of streamMockAgent(message, { user, scope })) {
               if (event.type === "done") {
                 const fallback: AgentResponse = { ...event.response, _agent: "mock-fallback", _llmError: errMsg }
                 finalResponse = fallback

@@ -1,3 +1,13 @@
+// 数据源类型（单一来源：DB schema / 前端 / API zod / 迁移共用）
+export const DATA_SOURCE_TYPES = [
+  "sqlite", "mysql", "postgresql", "sqlserver", "oracle",
+  "db2", "hive", "impala", "elasticsearch", "dtsql",
+  "vector_pgvector", "vector_milvus",
+  "vector_qdrant", "vector_weaviate", "vector_chroma",
+] as const
+
+const DS_TYPE_SQL = DATA_SOURCE_TYPES.map((t) => `'${t}'`).join(",")
+
 export const CREATE_TABLES = `
 CREATE TABLE IF NOT EXISTS customers (
   id TEXT PRIMARY KEY,
@@ -146,10 +156,7 @@ CREATE TABLE IF NOT EXISTS notification_channels (
 CREATE TABLE IF NOT EXISTS data_sources (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
-  type TEXT NOT NULL CHECK(type IN (
-    'sqlite','mysql','postgresql','sqlserver','oracle',
-    'db2','hive','impala','elasticsearch','dtsql','vector_pgvector','vector_milvus'
-  )),
+  type TEXT NOT NULL CHECK(type IN (${DS_TYPE_SQL})),
   host TEXT,
   port INTEGER,
   database_name TEXT,

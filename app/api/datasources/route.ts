@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server"
 import { z } from "zod"
 import { getDb } from "@/lib/db"
+import { DATA_SOURCE_TYPES } from "@/lib/db/schema"
 import { userFromHeaders } from "@/lib/auth/scope"
 import { encryptSecret } from "@/lib/security/encrypt"
+import { writeAuditLog } from "@/lib/audit/log"
 
 export const runtime = "nodejs"
 
@@ -19,6 +21,9 @@ export const DS_TYPE_LABELS: Record<string, string> = {
   dtsql:            "DTSQL（自建）",
   vector_pgvector:  "向量数据库（pgvector）",
   vector_milvus:    "向量数据库（Milvus）",
+  vector_qdrant:    "向量数据库（Qdrant）",
+  vector_weaviate:  "向量数据库（Weaviate）",
+  vector_chroma:    "向量数据库（Chroma）",
 }
 
 type DsRow = {
@@ -45,12 +50,18 @@ export async function GET(req: NextRequest) {
 
   const db = getDb()
   const rows = db.prepare("SELECT * FROM data_sources ORDER BY created_at DESC").all() as DsRow[]
-  return NextResponse.json({ datasources: rows.map(maskRow) })
+  // 非管理员只回传 id/name/type（供工作台选数据源），不回传 host/端口/账号等连接信息
+  const list = rows.map((row) =>
+    user.role === "branch_admin"
+      ? maskRow(row)
+      : { id: row.id, name: row.name, type: row.type, enabled: Boolean(row.enabled) }
+  )
+  return NextResponse.json({ datasources: list })
 }
 
 const createSchema = z.object({
   name: z.string().min(1).max(60),
-  type: z.enum(["sqlite","mysql","postgresql","sqlserver","oracle","db2","hive","impala","elasticsearch","dtsql","vector_pgvector","vector_milvus"]),
+  type: z.enum([...DATA_SOURCE_TYPES]),
   host: z.string().max(200).optional(),
   port: z.number().int().min(1).max(65535).optional(),
   databaseName: z.string().max(200).optional(),
@@ -76,6 +87,21 @@ export async function POST(req: NextRequest) {
   db.prepare(
     "INSERT INTO data_sources (id,name,type,host,port,database_name,username,password_enc,extra_config,created_by) VALUES (?,?,?,?,?,?,?,?,?,?)"
   ).run(id, name, type, host ?? null, port ?? null, databaseName ?? null, username ?? null, passwordEnc, JSON.stringify(extraConfig), user.sub)
+
+  writeAuditLog({
+    actorId: user.sub,
+    actorName: user.name,
+    actorRole: user.role,
+    actorBranch: user.branch,
+    action: "admin.datasource.create",
+    resourceType: "datasource",
+    resourceId: id,
+    summary: `${user.name} 新增数据源「${name}」（${type}）`,
+    detail: { name, type, host: host ?? null, port: port ?? null, databaseName: databaseName ?? null },
+    ipAddress: req.headers.get("x-forwarded-for") ?? null,
+    requestId: req.headers.get("x-request-id") ?? null,
+    dataScope: null,
+  })
 
   return NextResponse.json({ id }, { status: 201 })
 }

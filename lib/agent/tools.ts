@@ -12,6 +12,8 @@ import { buildProfile } from "@/lib/agent/mock-tools"
 import { generateScript } from "@/lib/mock/scripts"
 import { redactForLlm } from "@/lib/auth/desensitize"
 import { decryptSecret } from "@/lib/security/encrypt"
+import { buildSchemaPrompt } from "@/lib/db/schema-info"
+import { writeAuditLog } from "@/lib/audit/log"
 import type { ToolDef } from "@/lib/agent/llm"
 import type { AgentResultType } from "@/lib/agent/types"
 import type { AgentCtx } from "@/lib/agent/llm-agent"
@@ -190,19 +192,19 @@ export const toolDefs: ToolDef[] = [
       properties: {
         code: {
           type: "string",
-          description: `完整 Python 代码，可直接使用以下内置函数（无需 import sqlite3）：
+          description: `完整 Python 代码，可直接使用以下内置函数（沙箱只含 Python 标准库，**严禁 import pandas/numpy/matplotlib 等第三方库**）：
 - query(sql, params=None) → list[dict]   执行 SQL，返回字典列表
 - query_one(sql, params=None) → dict     查询单行
-- emit_chart(type, title, data, x_key, y_keys)  输出图表，type='bar'|'line'|'pie'
+- show_table(rows, max_rows=20)          以 Markdown 表格打印查询结果
+- emit_chart(chart_type, title, data, x_key, y_keys)  输出图表，chart_type='bar'|'line'|'pie'
 
-默认数据库表结构（SQLite）：
-- customers(id,name,avg_deposit,mortgage_loan,credit_loan,risk_level,segment,manager_name,branch,grid,community,has_other_bank_loan,has_valid_contract,used_credit_amount)
-- managers(id,name,branch,grid,current_customer_count,monthly_deposit_increase,monthly_loan_increase,monthly_new_customers,maintenance_score)
-- alerts(id,type,severity,title,customer_id,customer_name,manager_name,amount,due_date,status)
-- visits(id,customer_id,visited_at,manager,channel,summary)
+【重要】当前数据源的真实表结构与字段名见 System Prompt 末尾的「数据字典」。写 SQL 必须用字典里的真实表名/字段名，禁止臆造。若字典为空，回退使用默认库 bank.db（customers/managers/alerts/visits/products）。若用户指定外部数据库，传入 datasourceId。
+金额单位：元，显示时除以 10000 转为"万"。
 
-若使用外部数据源（MySQL/PostgreSQL/ES等），query() 函数自动适配对应驱动。
-金额字段单位：元，显示时除以10000转为"万"。`,
+示例（按客户经理统计日均存款并出柱状图）：
+rows = query("SELECT manager_name AS name, ROUND(SUM(avg_deposit)/10000,1) AS dep FROM customers GROUP BY manager_name ORDER BY dep DESC")
+show_table(rows)
+emit_chart("bar", "各经理日均存款（万）", rows, "name", [{"key": "dep", "label": "日均存款(万)", "color": "#1e40af"}])`,
         },
         datasourceId: {
           type: "string",
@@ -388,14 +390,16 @@ export const toolHandlers: Record<string, ToolHandler> = {
   analyzeCustomer(args, ctx) {
     const db = getDb()
     const q = String(args.query ?? "").trim()
+    const scope = ctx?.scope
     const row = db.prepare(
-      "SELECT * FROM customers WHERE name = ? OR id = ? OR id_no_masked LIKE ? OR phone_masked LIKE ? OR community LIKE ? LIMIT 1"
-    ).get(q, q.toUpperCase(), `%${q}%`, `%${q}%`, `%${q}%`) as Record<string, unknown> | undefined
+      `SELECT * FROM customers WHERE ${scope?.customerWhere ?? "1=1"} AND (name = ? OR id = ? OR id_no_masked LIKE ? OR phone_masked LIKE ? OR community LIKE ?) LIMIT 1`
+    ).get(...(scope?.customerParams ?? []), q, q.toUpperCase(), `%${q}%`, `%${q}%`, `%${q}%`) as Record<string, unknown> | undefined
 
+    if (!row) {
+      return { textForModel: `未在你的数据权限范围内找到客户「${q}」，请确认姓名/编号是否正确。`, ui: null }
+    }
     const role = ctx?.user?.role
-    const customer = row ? rowToCustomer(row, role) : rowToCustomer(
-      db.prepare("SELECT * FROM customers LIMIT 1").get() as Record<string, unknown>, role
-    )
+    const customer = rowToCustomer(row, role)
     const profile: CustomerProfile = buildProfile(customer.id)
     const redacted = redactForLlm(customer)
 
@@ -408,14 +412,16 @@ export const toolHandlers: Record<string, ToolHandler> = {
   generateInvestigationReport(args, ctx) {
     const db = getDb()
     const q = String(args.query ?? "").trim()
+    const scope = ctx?.scope
     const row = db.prepare(
-      "SELECT * FROM customers WHERE name = ? OR id = ? LIMIT 1"
-    ).get(q, q.toUpperCase()) as Record<string, unknown> | undefined
+      `SELECT * FROM customers WHERE ${scope?.customerWhere ?? "1=1"} AND (name = ? OR id = ?) LIMIT 1`
+    ).get(...(scope?.customerParams ?? []), q, q.toUpperCase()) as Record<string, unknown> | undefined
 
+    if (!row) {
+      return { textForModel: `未在你的数据权限范围内找到客户「${q}」，无法生成调查报告。`, ui: null }
+    }
     const role = ctx?.user?.role
-    const customer = row ? rowToCustomer(row, role) : rowToCustomer(
-      db.prepare("SELECT * FROM customers LIMIT 1").get() as Record<string, unknown>, role
-    )
+    const customer = rowToCustomer(row, role)
     const profile = buildProfile(customer.id)
 
     return {
@@ -441,14 +447,16 @@ export const toolHandlers: Record<string, ToolHandler> = {
     const db = getDb()
     const q = String(args.query ?? "").trim()
     const scene = String(args.scene ?? "营销")
+    const scope = ctx?.scope
     const row = db.prepare(
-      "SELECT * FROM customers WHERE name = ? OR id = ? LIMIT 1"
-    ).get(q, q.toUpperCase()) as Record<string, unknown> | undefined
+      `SELECT * FROM customers WHERE ${scope?.customerWhere ?? "1=1"} AND (name = ? OR id = ?) LIMIT 1`
+    ).get(...(scope?.customerParams ?? []), q, q.toUpperCase()) as Record<string, unknown> | undefined
 
+    if (!row) {
+      return { textForModel: `未在你的数据权限范围内找到客户「${q}」，无法生成话术。`, ui: null }
+    }
     const role = ctx?.user?.role
-    const customer = row ? rowToCustomer(row, role) : rowToCustomer(
-      db.prepare("SELECT * FROM customers LIMIT 1").get() as Record<string, unknown>, role
-    )
+    const customer = rowToCustomer(row, role)
     const result = generateScript(customer, scene)
     const scriptContent = `# ${result.title}\n\n**客户等级：** ${result.grade}类  **场景：** ${result.scene}  **渠道：** ${result.channel}\n\n---\n\n${result.content}\n\n---\n\n**使用建议：**\n${result.tips.map((t) => `- ${t}`).join("\n")}`
     const profile = buildProfile(customer.id)
@@ -494,7 +502,12 @@ export const toolHandlers: Record<string, ToolHandler> = {
     // Resolve external datasource if requested
     let datasource: Record<string, unknown> | undefined
     const dsId = String(args.datasourceId ?? "").trim()
+      || (ctx?.schema && ctx.schema.source !== "default" ? ctx.schema.source : "")
     if (dsId) {
+      // 外部数据源执行仅限分行管理员：防止客户经理/支行长借 codeAct 绕过数据范围访问外部库
+      if (ctx?.user?.role !== "branch_admin") {
+        return { textForModel: `外部数据源（${dsId}）仅分行管理员可查询，当前角色无权访问。`, ui: null }
+      }
       const db = getDb()
       const dsRow = db.prepare("SELECT * FROM data_sources WHERE id = ? AND enabled = 1").get(dsId) as Record<string, unknown> | undefined
       if (dsRow) {
@@ -509,6 +522,23 @@ export const toolHandlers: Record<string, ToolHandler> = {
           extra_config: JSON.parse(String(dsRow.extra_config || "{}")),
         }
       }
+    }
+
+    if (ctx?.user) {
+      writeAuditLog({
+        actorId: ctx.user.sub,
+        actorName: ctx.user.name,
+        actorRole: ctx.user.role,
+        actorBranch: ctx.user.branch,
+        action: "ai.codeact.exec",
+        resourceType: "codeact",
+        resourceId: dsId || null,
+        summary: `${ctx.user.name} 执行 codeAct 分析${dsId ? `（外部数据源 ${dsId}）` : "（默认库）"}`,
+        detail: { datasourceId: dsId || null, codeLength: code.length, codePreview: code.slice(0, 300) },
+        ipAddress: null,
+        requestId: null,
+        dataScope: scope?.type ?? null,
+      })
     }
 
     try {
@@ -562,7 +592,7 @@ const BASE_INSTRUCTIONS = `你是「丰年银行 AI 客户经营助手」的内�
 - generateScript：个性化话术生成（必传 query=客户姓名/编号，可选 scene=营销/催收/续存/转介绍）
 - queryDatabase：自动选表查询（可选 table=customers/managers/alerts/products/visits）
 - exportData：CSV 导出（必传 type ∈ {customers, managers, alerts}）
-- codeActAnalysis：**图表生成 / 衍生指标计算 / 跨表聚合**（必传 task=中文描述，如「按经理汇总存款画柱状图」「计算各网格存贷比」）。**有图表或复合指标需求时优先用此工具；普通筛选/预警/画像用上面专用工具。**
+- codeActAnalysis：**图表生成 / 衍生指标计算 / 跨表聚合**（必传 code=完整 Python，用 query()/emit_chart()，**沙箱只有标准库、禁止 import pandas/numpy**）。**有图表或复合指标需求时优先用此工具；普通筛选/预警/画像用上面专用工具。**
 
 正例：用户说"梳理高新区·锦园中日均存款大于 10 万的客户"
 → filterCustomers({ community: "高新区·锦园", minAvgDeposit: 100000 })
@@ -576,6 +606,12 @@ export function buildSystemPrompt(skillPrompts: string[] = [], ctx?: AgentCtx): 
   if (skillPrompts.length) parts.push(skillPrompts.join("\n\n"))
   if (ctx?.user && ctx?.scope) {
     parts.push(`当前登录用户：${ctx.user.name}（角色：${ctx.user.role}${ctx.user.branch ? "，所在机构：" + ctx.user.branch : ""}）。数据访问范围：${ctx.scope.label}。所有查询和分析只能基于用户权限范围内的数据进行，禁止越权访问其他机构或人员的数据。`)
+  }
+  // 注入真实数据字典：让模型「自主选表」并「正确匹配字段」，取代硬编码表结构
+  const schemaBlock = buildSchemaPrompt(ctx?.schema, ctx?.focusTable)
+  if (schemaBlock) parts.push(schemaBlock)
+  if (ctx?.schema && ctx.schema.source !== "default") {
+    parts.push(`当前数据源是外部库（id=${ctx.schema.source}）。请只用 codeActAnalysis 工具查询它；filterCustomers/scanAlerts/analyzeCustomer 等专用工具仅作用于默认客户库 bank.db。`)
   }
   return parts.join("\n\n")
 }
