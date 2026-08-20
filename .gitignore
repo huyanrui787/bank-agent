@@ -48,3 +48,6 @@ __pycache__/
 
 # local sqlite (seeded on first run)
 /data/
+
+# claude local settings
+.claude/settings.local.json
