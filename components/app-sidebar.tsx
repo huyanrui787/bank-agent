@@ -20,8 +20,11 @@ import {
 import { cn } from "@/lib/utils"
 import { useUser } from "@/lib/hooks/use-user"
 import { useTasks } from "@/lib/hooks/use-tasks"
+import type { LucideIcon } from "lucide-react"
 
-const baseItems = [
+type NavItem = { href: string; label: string; icon: LucideIcon; badge?: number }
+
+const baseItems: NavItem[] = [
   { href: "/", label: "AI 工作台", icon: LayoutDashboard },
   { href: "/customer-segments", label: "客群梳理", icon: Users },
   { href: "/vertical-management", label: "垂直管理", icon: UserCog },
@@ -37,19 +40,20 @@ export function AppSidebar() {
   const { user } = useUser()
   const { todayCount } = useTasks()
 
-  const items = [
+  const items: NavItem[] = [
     ...baseItems,
-    ...(user?.permissions?.includes("view_audit")
-      ? [{ href: "/audit", label: "审计日志", icon: ClipboardList }]
-      : []),
-    ...(user?.permissions?.includes("manage_users")
-      ? [{ href: "/permissions", label: "权限配置", icon: ShieldCheck }]
-      : []),
     ...(user?.permissions?.includes("manage_channels")
       ? [{ href: "/channels", label: "渠道配置", icon: Radio }]
       : []),
     ...(user?.permissions?.includes("manage_datasources")
       ? [{ href: "/datasources", label: "数据源", icon: Database }]
+      : []),
+    { href: "/tasks", label: "定时任务", icon: Bell, badge: todayCount },
+    ...(user?.permissions?.includes("view_audit")
+      ? [{ href: "/audit", label: "审计日志", icon: ClipboardList }]
+      : []),
+    ...(user?.permissions?.includes("manage_users")
+      ? [{ href: "/permissions", label: "权限配置", icon: ShieldCheck }]
       : []),
   ]
 
@@ -81,29 +85,15 @@ export function AppSidebar() {
               )}
             >
               <Icon className="h-4 w-4" />
-              {item.label}
+              <span className="flex-1">{item.label}</span>
+              {item.badge && item.badge > 0 ? (
+                <span className="rounded-full bg-primary text-primary-foreground text-[10px] px-1.5 py-0.5 leading-none font-medium">
+                  {item.badge}
+                </span>
+              ) : null}
             </Link>
           )
         })}
-
-        {/* Tasks menu item with today badge */}
-        <Link
-          href="/tasks"
-          className={cn(
-            "flex items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-colors",
-            pathname.startsWith("/tasks")
-              ? "bg-secondary text-secondary-foreground font-medium"
-              : "text-muted-foreground hover:bg-accent hover:text-foreground"
-          )}
-        >
-          <Bell className="h-4 w-4" />
-          <span className="flex-1">定时任务</span>
-          {todayCount > 0 && (
-            <span className="rounded-full bg-primary text-primary-foreground text-[10px] px-1.5 py-0.5 leading-none font-medium">
-              {todayCount}
-            </span>
-          )}
-        </Link>
       </nav>
       <div className="px-3 py-3 border-t border-border text-xs text-muted-foreground space-y-1">
         <div>演示环境</div>
