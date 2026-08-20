@@ -51,7 +51,7 @@ services:
     mem_limit: 512m
 
   weaviate:
-    image: semitechnologies/weaviate:1.24.10
+    image: semitechnologies/weaviate:1.27.0
     container_name: bank-ds-weaviate
     environment:
       - AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED=true
@@ -62,7 +62,7 @@ services:
     mem_limit: 512m
 
   chroma:
-    image: chromadb/chroma:0.5.5
+    image: chromadb/chroma:latest
     container_name: bank-ds-chroma
     ports:
       - "8000:8000"
@@ -129,6 +129,7 @@ services:
     image: icr.io/db2_community/db2:11.5.9.0
     container_name: bank-ds-db2
     profiles: ["heavy"]
+    platform: linux/amd64
     privileged: true
     environment:
       LICENSE: accept

@@ -15,7 +15,7 @@ import { ManagerRanking } from "@/components/manager-ranking"
 import { CustomerTable } from "@/components/customer-table"
 import { ChartBlock } from "@/components/chat/chart-block"
 import type { AgentResponse } from "@/lib/agent/types"
-import type { BusinessAlert, Customer } from "@/lib/mock/types"
+import type { BusinessAlert, Customer, Manager } from "@/lib/mock/types"
 
 export function intentLabel(intent: AgentResponse["intent"]) {
   return ({
@@ -192,7 +192,7 @@ export function AgentResultBlock({ response }: { response: AgentResponse }) {
           <CardTitle>经理绩效排名</CardTitle>
         </CardHeader>
         <CardContent>
-          <ManagerRanking />
+          <ManagerRanking managers={(response.data as Manager[]) ?? []} />
         </CardContent>
       </Card>
     )

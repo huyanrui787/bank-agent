@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server"
-import { getDb, rowToCustomer, rowToManager, rowToAlert } from "@/lib/db"
+import { getBusinessDataSource } from "@/lib/datasource"
 import { userFromHeaders, buildScope } from "@/lib/auth/scope"
 import { can } from "@/lib/auth/permissions"
 import { writeAuditLog } from "@/lib/audit/log"
@@ -50,35 +50,21 @@ export async function GET(req: NextRequest) {
   const type = (searchParams.get("type") ?? "customers") as ExportType
   const format = (searchParams.get("format") ?? "csv") as ExportFormat
 
-  const db = getDb()
+  const ds = getBusinessDataSource()
   const scope = buildScope(user)
+  const ALL = 100000
 
   let rows: unknown[]
   let recordCount: number
 
   if (type === "managers") {
-    const raw = db
-      .prepare(
-        `SELECT * FROM (SELECT * FROM managers ORDER BY monthly_deposit_increase DESC)
-         WHERE ${scope.managerWhere}`
-      )
-      .all(...scope.managerParams) as Record<string, unknown>[]
-    rows = raw.map(rowToManager)
+    rows = ds.getManagers(scope)
     recordCount = rows.length
   } else if (type === "alerts") {
-    const raw = db
-      .prepare(
-        `SELECT * FROM (SELECT * FROM alerts ORDER BY CASE severity WHEN 'critical' THEN 0 WHEN 'warning' THEN 1 ELSE 2 END)
-         WHERE ${scope.alertWhere}`
-      )
-      .all(...scope.alertParams) as Record<string, unknown>[]
-    rows = raw.map(rowToAlert)
+    rows = ds.scanAlerts({}, scope, ALL)
     recordCount = rows.length
   } else {
-    const raw = db
-      .prepare(`SELECT * FROM customers WHERE ${scope.customerWhere}`)
-      .all(...scope.customerParams) as Record<string, unknown>[]
-    rows = raw.map((r) => rowToCustomer(r))
+    rows = ds.filterCustomers({}, scope, undefined, ALL)
     recordCount = rows.length
   }
 

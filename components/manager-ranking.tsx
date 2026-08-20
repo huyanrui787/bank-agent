@@ -1,10 +1,10 @@
 "use client"
 
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts"
-import { managers } from "@/lib/mock/managers"
+import type { Manager } from "@/lib/mock/types"
 import { formatCurrency } from "@/lib/utils"
 
-export function ManagerRanking() {
+export function ManagerRanking({ managers }: { managers: Manager[] }) {
   const data = [...managers]
     .sort((a, b) => b.monthlyDepositIncrease - a.monthlyDepositIncrease)
     .map((m) => ({

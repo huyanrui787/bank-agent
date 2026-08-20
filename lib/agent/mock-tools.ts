@@ -22,24 +22,30 @@ export type MockAgentCtx = {
 
 /** 在内存 mock 数据上按数据范围过滤（与 buildScope 语义一致：personal / branch / bank）。 */
 function applyScope(ctx?: MockAgentCtx) {
-  const type = ctx?.scope?.type ?? "bank"
-  const name = ctx?.user?.name ?? null
-  const branch = ctx?.user?.branch ?? null
-  const managerId = ctx?.user?.managerId ?? null
+  const scope = ctx?.scope
+
+  const customerCond = scope?.customer
+  const managerCond = scope?.manager
+  const alertCond = scope?.alert
 
   const cs =
-    type === "personal" ? customers.filter((c) => c.managerName === name)
-    : type === "branch" ? customers.filter((c) => c.branch === branch)
-    : customers
+    customerCond?.kind === "eq"
+      ? customers.filter((c) => (c as unknown as Record<string, unknown>)[customerCond.field] === customerCond.value)
+      : customers
   const ms =
-    type === "personal" ? managers.filter((m) => m.name === name || m.id === managerId)
-    : type === "branch" ? managers.filter((m) => m.branch === branch)
-    : managers
-  const branchManagers = new Set(managers.filter((m) => m.branch === branch).map((m) => m.name))
-  const as =
-    type === "personal" ? alerts.filter((a) => a.managerName === name)
-    : type === "branch" ? alerts.filter((a) => branchManagers.has(a.managerName ?? ""))
-    : alerts
+    managerCond?.kind === "eq"
+      ? managers.filter((m) => (m as unknown as Record<string, unknown>)[managerCond.field] === managerCond.value)
+      : managers
+
+  let as = alerts
+  if (alertCond) {
+    if (alertCond.kind === "eq") {
+      as = alerts.filter((a) => (a as unknown as Record<string, unknown>)[alertCond.field] === alertCond.value)
+    } else {
+      const branchManagers = new Set(managers.filter((m) => m.branch === alertCond.branch).map((m) => m.name))
+      as = alerts.filter((a) => branchManagers.has(a.managerName ?? ""))
+    }
+  }
   return { cs, ms, as }
 }
 
@@ -191,7 +197,7 @@ function handleAnalysis(message: string, ctx?: MockAgentCtx): AgentResponse {
     }
   }
 
-  const profile = buildProfile(customer.id)
+  const profile = buildProfile(customer)
 
   return {
     intent: "customer_analysis",
@@ -224,7 +230,7 @@ function handleReport(message: string, ctx?: MockAgentCtx): AgentResponse {
       suggestedNextActions: ["分析张明的风险情况"],
     }
   }
-  const profile = buildProfile(customer.id)
+  const profile = buildProfile(customer)
   return {
     intent: "generate_report",
     summary: `已为客户 ${customer.name} 生成贷前调查报告草稿（${profile.generatedReport.length} 字）。`,
@@ -301,7 +307,7 @@ ${result.tips.map((t) => `- ${t}`).join("\n")}`
       step(4, "生成话术", `已生成${result.channel}${result.scene}话术，含 ${result.tips.length} 条使用建议`),
     ],
     resultType: "report",
-    data: { ...buildProfile(customer.id), generatedReport: scriptContent },
+    data: { ...buildProfile(customer), generatedReport: scriptContent },
     suggestedNextActions: ["复制话术", "切换渠道（微信/上门）", "生成调查报告"],
   }
 }
@@ -372,8 +378,7 @@ function handleUnknown(message: string): AgentResponse {
   }
 }
 
-export function buildProfile(customerId: string): CustomerProfile {
-  const customer = customers.find((c) => c.id === customerId) ?? customers[0]
+export function buildProfile(customer: Customer): CustomerProfile {
   const myVisits = visits.filter((v) => v.customerId === customer.id)
   const fallbackVisits = myVisits.length
     ? myVisits

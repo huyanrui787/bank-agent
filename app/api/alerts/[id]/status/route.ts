@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { z } from "zod"
 import { getDb } from "@/lib/db"
+import { getBusinessDataSource } from "@/lib/datasource"
 import { userFromHeaders, buildScope } from "@/lib/auth/scope"
 import { writeAuditLog } from "@/lib/audit/log"
 
@@ -27,17 +28,16 @@ export async function PUT(
   const { status } = parsed.data
   const db = getDb()
   const scope = buildScope(user)
+  const ds = getBusinessDataSource()
 
   // Verify alert is in scope
-  const alert = db
-    .prepare(`SELECT * FROM alerts WHERE id = ? AND ${scope.alertWhere}`)
-    .get(id, ...scope.alertParams) as Record<string, unknown> | undefined
+  const alert = ds.getAlert(id, scope)
 
   if (!alert) {
     return NextResponse.json({ error: "预警不存在或无权操作" }, { status: 404 })
   }
 
-  const prevStatus = alert.status as string
+  const prevStatus = alert.status
   db.prepare("UPDATE alerts SET status = ? WHERE id = ?").run(status, id)
 
   writeAuditLog({

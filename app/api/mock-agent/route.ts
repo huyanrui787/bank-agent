@@ -83,7 +83,7 @@ export async function POST(req: NextRequest) {
           }
         } else {
           try {
-            for await (const event of streamLlmAgent(message, skillPrompts, { user, scope, schema: schemaCtx, focusTable: selectedTable ?? null })) {
+            for await (const event of streamLlmAgent(message, skillPrompts, { user, scope, schema: schemaCtx, focusTable: selectedTable ?? null, datasourceId })) {
               enqueue(event)
               if (event.type === "done") finalResponse = event.response
             }

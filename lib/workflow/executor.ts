@@ -116,7 +116,7 @@ async function runNode(
       const rawArgs = d.toolArgs ? interpolateObject(d.toolArgs, vars) : {}
       const agentCtx = ctx ? {
         user: { sub: ctx.userId ?? "", name: ctx.userName ?? "", role: ctx.role as "manager", branch: null, grid: null, managerId: null },
-        scope: { type: "bank" as const, customerWhere: "1=1", customerParams: [], alertWhere: "1=1", alertParams: [], managerWhere: "1=1", managerParams: [], label: "全行" },
+        scope: { type: "bank" as const, customer: null, manager: null, alert: null, label: "全行" },
       } : undefined
 
       const res = await Promise.resolve(handler(rawArgs, agentCtx))

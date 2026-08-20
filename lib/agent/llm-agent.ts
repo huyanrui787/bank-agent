@@ -19,6 +19,8 @@ export type AgentCtx = {
   schema?: DbSchema
   /** 用户当前选中的表（用于把该表排前并标注，未选则 LLM 自主选表） */
   focusTable?: string | null
+  /** 外部数据源 ID；专用工具据此选择连接器（不传则用默认 bank.db） */
+  datasourceId?: string
 }
 
 const MAX_TOOL_TURNS = 4

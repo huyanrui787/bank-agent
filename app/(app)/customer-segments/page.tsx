@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { Download, FileSpreadsheet, Filter, Layers, Search, BarChart2 } from "lucide-react"
 import {
   PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip,
@@ -14,7 +14,7 @@ import { Input } from "@/components/ui/input"
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select"
-import { customers } from "@/lib/mock/customers"
+import type { Customer } from "@/lib/mock/types"
 
 type TemplateId = "all" | "high-deposit" | "low-loan-high-credit" | "contract-unused" | "credit-updated" | "no-bank-other"
 
@@ -33,10 +33,18 @@ export default function CustomerSegmentsPage() {
   const [community, setCommunity] = useState<string>("all")
   const [minMortgage, setMinMortgage] = useState(500_000)
   const [maxCredit, setMaxCredit] = useState(80_000)
+  const [customers, setCustomers] = useState<Customer[]>([])
+
+  useEffect(() => {
+    fetch("/api/customers")
+      .then((r) => r.json())
+      .then((d) => setCustomers(d.customers ?? []))
+      .catch(() => setCustomers([]))
+  }, [])
 
   const communities = useMemo(
     () => Array.from(new Set(customers.map((c) => c.community))),
-    []
+    [customers]
   )
 
   const filtered = useMemo(() => {
@@ -57,7 +65,7 @@ export default function CustomerSegmentsPage() {
           return true
       }
     })
-  }, [template, minDeposit, community, minMortgage, maxCredit])
+  }, [template, minDeposit, community, minMortgage, maxCredit, customers])
 
   const riskDist = useMemo(() => {
     const map: Record<string, number> = { low: 0, medium: 0, high: 0 }

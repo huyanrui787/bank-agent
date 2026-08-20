@@ -7,7 +7,9 @@
  * 这样保证：模型只决定意图与参数，结果数据始终来自本地确定性 Mock，演示稳定可控。
  */
 
-import { getDb, rowToCustomer, rowToManager, rowToAlert, rowToVisit } from "@/lib/db"
+import { getDb } from "@/lib/db"
+import { getBusinessDataSource } from "@/lib/datasource"
+import type { DataScope } from "@/lib/auth/scope"
 import { buildProfile } from "@/lib/agent/mock-tools"
 import { generateScript } from "@/lib/mock/scripts"
 import { redactForLlm } from "@/lib/auth/desensitize"
@@ -294,44 +296,28 @@ else:
 `
 }
 
+const BANK_SCOPE: DataScope = { type: "bank", customer: null, manager: null, alert: null, label: "全行" }
+
 export const toolHandlers: Record<string, ToolHandler> = {
   filterCustomers(args, ctx) {
-    const db = getDb()
-    const scope = ctx?.scope
+    const ds = getBusinessDataSource(ctx?.datasourceId)
+    const scope = ctx?.scope ?? BANK_SCOPE
     const conditions: string[] = []
-    const params: unknown[] = []
-    let sql = `SELECT * FROM customers WHERE ${scope?.customerWhere ?? "1=1"}`
-    if (scope?.customerParams) params.push(...scope.customerParams)
+    const filter = {
+      community: typeof args.community === "string" && args.community.trim() ? args.community.trim() : undefined,
+      minAvgDeposit: typeof args.minAvgDeposit === "number" ? args.minAvgDeposit : undefined,
+      hasOtherBankLoan: args.hasOtherBankLoan === true ? true : undefined,
+      hasValidContract: args.hasValidContract === true ? true : undefined,
+      unusedCredit: args.unusedCredit === true ? true : undefined,
+    }
+    if (filter.community) conditions.push(`社区/网格 包含 "${filter.community}"`)
+    if (typeof filter.minAvgDeposit === "number") conditions.push(`日均存款 >= ${filter.minAvgDeposit.toLocaleString()} 元`)
+    if (filter.hasOtherBankLoan) conditions.push("本行无贷·他行有贷")
+    if (filter.hasValidContract) conditions.push("有效合同")
+    if (filter.unusedCredit) conditions.push("当前用信 = 0")
 
-    if (typeof args.community === "string" && args.community.trim()) {
-      const q = `%${args.community.trim()}%`
-      sql += " AND (community LIKE ? OR grid LIKE ?)"
-      params.push(q, q)
-      conditions.push(`社区/网格 包含 "${args.community.trim()}"`)
-    }
-    if (typeof args.minAvgDeposit === "number") {
-      sql += " AND avg_deposit >= ?"
-      params.push(args.minAvgDeposit)
-      conditions.push(`日均存款 >= ${args.minAvgDeposit.toLocaleString()} 元`)
-    }
-    if (args.hasOtherBankLoan === true) {
-      sql += " AND has_other_bank_loan = 1 AND mortgage_loan = 0 AND credit_loan = 0"
-      conditions.push("本行无贷·他行有贷")
-    }
-    if (args.hasValidContract === true) {
-      sql += " AND has_valid_contract = 1"
-      conditions.push("有效合同")
-    }
-    if (args.unusedCredit === true) {
-      sql += " AND used_credit_amount = 0"
-      conditions.push("当前用信 = 0")
-    }
     const limit = Math.max(1, Math.min(80, Number(args.limit ?? 30)))
-    sql += ` LIMIT ${limit}`
-
-    const rows = db.prepare(sql).all(...params) as Record<string, unknown>[]
-    const role = ctx?.user?.role
-    const list = rows.map((r) => rowToCustomer(r, role))
+    const list = ds.filterCustomers(filter, scope, ctx?.user?.role, limit)
 
     return {
       textForModel: `从数据库查询到 ${list.length} 位客户（条件：${conditions.join("、") || "无"}）。前几位：${list.slice(0, 5).map((c) => `${c.name}(${c.id}, 日均${(c.avgDeposit / 10000).toFixed(1)}万, 经理${c.managerName})`).join("；")}`,
@@ -340,14 +326,9 @@ export const toolHandlers: Record<string, ToolHandler> = {
   },
 
   getManagerPerformance(_args, ctx) {
-    const db = getDb()
-    const scope = ctx?.scope
-    const where = scope?.managerWhere ?? "1=1"
-    const params = scope?.managerParams ?? []
-    const rows = db.prepare(
-      `SELECT * FROM managers WHERE ${where} ORDER BY monthly_deposit_increase DESC`
-    ).all(...params) as Record<string, unknown>[]
-    const list = rows.map(rowToManager)
+    const ds = getBusinessDataSource(ctx?.datasourceId)
+    const scope = ctx?.scope ?? BANK_SCOPE
+    const list = ds.getManagers(scope)
     const totalNewCustomers = list.reduce((s, m) => s + m.monthlyNewCustomers, 0)
     return {
       textForModel: `数据库中共 ${list.length} 位客户经理，本月合计新增客户 ${totalNewCustomers} 户。Top3 存款新增：${list.slice(0, 3).map((m) => `${m.name}(${(m.monthlyDepositIncrease / 10000).toFixed(0)}万, 环比${m.vsLastMonthDeposit >= 0 ? "+" : ""}${m.vsLastMonthDeposit}%)`).join("，")}`,
@@ -356,29 +337,15 @@ export const toolHandlers: Record<string, ToolHandler> = {
   },
 
   scanAlerts(args, ctx) {
-    const db = getDb()
-    const scope = ctx?.scope
-    const params: unknown[] = scope?.alertParams ? [...scope.alertParams] : []
-    let sql = `SELECT * FROM alerts WHERE ${scope?.alertWhere ?? "1=1"}`
-
-    if (typeof args.severity === "string") {
-      sql += " AND severity = ?"
-      params.push(args.severity)
+    const ds = getBusinessDataSource(ctx?.datasourceId)
+    const scope = ctx?.scope ?? BANK_SCOPE
+    const filter = {
+      severity: typeof args.severity === "string" ? (args.severity as "info" | "warning" | "critical") : undefined,
+      types: Array.isArray(args.types) && args.types.length > 0 ? (args.types as string[]) : undefined,
+      status: typeof args.status === "string" ? (args.status as "pending" | "processing" | "done") : undefined,
     }
-    if (Array.isArray(args.types) && args.types.length > 0) {
-      sql += ` AND type IN (${args.types.map(() => "?").join(",")})`
-      params.push(...args.types)
-    }
-    if (typeof args.status === "string") {
-      sql += " AND status = ?"
-      params.push(args.status)
-    }
-    sql += " ORDER BY CASE severity WHEN 'critical' THEN 0 WHEN 'warning' THEN 1 ELSE 2 END"
     const limit = Math.max(1, Math.min(50, Number(args.limit ?? 50)))
-    sql += ` LIMIT ${limit}`
-
-    const rows = db.prepare(sql).all(...params) as Record<string, unknown>[]
-    const list = rows.map(rowToAlert)
+    const list = ds.scanAlerts(filter, scope, limit)
     const criticalCount = list.filter((a) => a.severity === "critical").length
 
     return {
@@ -388,19 +355,15 @@ export const toolHandlers: Record<string, ToolHandler> = {
   },
 
   analyzeCustomer(args, ctx) {
-    const db = getDb()
+    const ds = getBusinessDataSource(ctx?.datasourceId)
     const q = String(args.query ?? "").trim()
-    const scope = ctx?.scope
-    const row = db.prepare(
-      `SELECT * FROM customers WHERE ${scope?.customerWhere ?? "1=1"} AND (name = ? OR id = ? OR id_no_masked LIKE ? OR phone_masked LIKE ? OR community LIKE ?) LIMIT 1`
-    ).get(...(scope?.customerParams ?? []), q, q.toUpperCase(), `%${q}%`, `%${q}%`, `%${q}%`) as Record<string, unknown> | undefined
+    const scope = ctx?.scope ?? BANK_SCOPE
+    const customer = ds.getCustomer(q, scope, ctx?.user?.role)
 
-    if (!row) {
+    if (!customer) {
       return { textForModel: `未在你的数据权限范围内找到客户「${q}」，请确认姓名/编号是否正确。`, ui: null }
     }
-    const role = ctx?.user?.role
-    const customer = rowToCustomer(row, role)
-    const profile: CustomerProfile = buildProfile(customer.id)
+    const profile: CustomerProfile = buildProfile(customer)
     const redacted = redactForLlm(customer)
 
     return {
@@ -410,19 +373,15 @@ export const toolHandlers: Record<string, ToolHandler> = {
   },
 
   generateInvestigationReport(args, ctx) {
-    const db = getDb()
+    const ds = getBusinessDataSource(ctx?.datasourceId)
     const q = String(args.query ?? "").trim()
-    const scope = ctx?.scope
-    const row = db.prepare(
-      `SELECT * FROM customers WHERE ${scope?.customerWhere ?? "1=1"} AND (name = ? OR id = ?) LIMIT 1`
-    ).get(...(scope?.customerParams ?? []), q, q.toUpperCase()) as Record<string, unknown> | undefined
+    const scope = ctx?.scope ?? BANK_SCOPE
+    const customer = ds.getCustomer(q, scope, ctx?.user?.role)
 
-    if (!row) {
+    if (!customer) {
       return { textForModel: `未在你的数据权限范围内找到客户「${q}」，无法生成调查报告。`, ui: null }
     }
-    const role = ctx?.user?.role
-    const customer = rowToCustomer(row, role)
-    const profile = buildProfile(customer.id)
+    const profile = buildProfile(customer)
 
     return {
       textForModel: `调查报告已从数据库生成，长度 ${profile.generatedReport.length} 字，覆盖基础/经营/风险/结论四段。`,
@@ -444,22 +403,18 @@ export const toolHandlers: Record<string, ToolHandler> = {
   },
 
   generateScript(args, ctx) {
-    const db = getDb()
+    const ds = getBusinessDataSource(ctx?.datasourceId)
     const q = String(args.query ?? "").trim()
     const scene = String(args.scene ?? "营销")
-    const scope = ctx?.scope
-    const row = db.prepare(
-      `SELECT * FROM customers WHERE ${scope?.customerWhere ?? "1=1"} AND (name = ? OR id = ?) LIMIT 1`
-    ).get(...(scope?.customerParams ?? []), q, q.toUpperCase()) as Record<string, unknown> | undefined
+    const scope = ctx?.scope ?? BANK_SCOPE
+    const customer = ds.getCustomer(q, scope, ctx?.user?.role)
 
-    if (!row) {
+    if (!customer) {
       return { textForModel: `未在你的数据权限范围内找到客户「${q}」，无法生成话术。`, ui: null }
     }
-    const role = ctx?.user?.role
-    const customer = rowToCustomer(row, role)
     const result = generateScript(customer, scene)
     const scriptContent = `# ${result.title}\n\n**客户等级：** ${result.grade}类  **场景：** ${result.scene}  **渠道：** ${result.channel}\n\n---\n\n${result.content}\n\n---\n\n**使用建议：**\n${result.tips.map((t) => `- ${t}`).join("\n")}`
-    const profile = buildProfile(customer.id)
+    const profile = buildProfile(customer)
 
     return {
       textForModel: `已为 ${customer.name}（${result.grade}类客户）生成${result.scene}话术，渠道：${result.channel}。`,
@@ -468,24 +423,31 @@ export const toolHandlers: Record<string, ToolHandler> = {
   },
 
   queryDatabase(args, ctx) {
-    const db = getDb()
-    const scope = ctx?.scope
-    const tableMap: Record<string, { baseSql: string; scopeWhere: string; scopeParams: unknown[]; label: string; mapper: (r: Record<string, unknown>) => unknown }> = {
-      customers: { baseSql: "SELECT * FROM customers", scopeWhere: scope?.customerWhere ?? "1=1", scopeParams: scope?.customerParams ?? [], label: "客户", mapper: rowToCustomer },
-      managers:  { baseSql: "SELECT * FROM managers ORDER BY monthly_deposit_increase DESC", scopeWhere: scope?.managerWhere ?? "1=1", scopeParams: scope?.managerParams ?? [], label: "客户经理", mapper: rowToManager },
-      alerts:    { baseSql: "SELECT * FROM alerts ORDER BY CASE severity WHEN 'critical' THEN 0 WHEN 'warning' THEN 1 ELSE 2 END", scopeWhere: scope?.alertWhere ?? "1=1", scopeParams: scope?.alertParams ?? [], label: "预警", mapper: rowToAlert },
-      visits:    { baseSql: "SELECT * FROM visits ORDER BY visited_at DESC", scopeWhere: "1=1", scopeParams: [], label: "走访记录", mapper: rowToVisit },
-      products:  { baseSql: "SELECT * FROM products", scopeWhere: "1=1", scopeParams: [], label: "产品", mapper: (r) => ({ productCode: r.product_code, productName: r.product_name, category: r.category, matchReason: r.match_reason, expectedRate: r.expected_rate, riskHint: r.risk_hint }) },
-    }
+    const ds = getBusinessDataSource(ctx?.datasourceId)
+    const scope = ctx?.scope ?? BANK_SCOPE
     const table = String(args.table ?? "customers")
-    const config = tableMap[table] ?? tableMap.customers
     const limit = Math.max(1, Math.min(50, Number(args.limit ?? 20)))
-    // Inject scope into base SQL: wrap as subquery with WHERE
-    const sql = `SELECT * FROM (${config.baseSql}) WHERE ${config.scopeWhere} LIMIT ${limit}`
-    const rows = db.prepare(sql).all(...config.scopeParams) as Record<string, unknown>[]
-    const data = rows.map(config.mapper)
+
+    let data: unknown[]
+    let label: string
+    if (table === "managers") {
+      data = ds.getManagers(scope)
+      label = "客户经理"
+    } else if (table === "alerts") {
+      data = ds.scanAlerts({}, scope, limit)
+      label = "预警"
+    } else if (table === "visits") {
+      data = ds.getVisits()
+      label = "走访记录"
+    } else if (table === "products") {
+      data = ds.getProducts()
+      label = "产品"
+    } else {
+      data = ds.filterCustomers({}, scope, ctx?.user?.role, limit)
+      label = "客户"
+    }
     return {
-      textForModel: `已从数据库 ${table} 表查询到 ${data.length} 条${config.label}记录。`,
+      textForModel: `已从数据库 ${table} 表查询到 ${data.length} 条${label}记录。`,
       ui: { resultType: "table" as const, data },
     }
   },

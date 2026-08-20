@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { toast } from "sonner"
 import {
   ArrowDownRight,
@@ -32,10 +32,8 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { ManagerRanking } from "@/components/manager-ranking"
-import { managers } from "@/lib/mock/managers"
-import { customers } from "@/lib/mock/customers"
 import { formatCurrency, formatDate } from "@/lib/utils"
-import type { Manager } from "@/lib/mock/types"
+import type { Manager, Customer } from "@/lib/mock/types"
 
 export default function VerticalManagementPage() {
   const [importStatus, setImportStatus] = useState<"idle" | "imported" | "assigned">("idle")
@@ -44,6 +42,19 @@ export default function VerticalManagementPage() {
   const [filterManager, setFilterManager] = useState("all")
   const [managerSearch, setManagerSearch] = useState("")
   const [selectedMonth, setSelectedMonth] = useState("2026-05")
+  const [managers, setManagers] = useState<Manager[]>([])
+  const [customers, setCustomers] = useState<Customer[]>([])
+
+  useEffect(() => {
+    fetch("/api/managers")
+      .then((r) => r.json())
+      .then((d) => setManagers(d.managers ?? []))
+      .catch(() => setManagers([]))
+    fetch("/api/customers")
+      .then((r) => r.json())
+      .then((d) => setCustomers(d.customers ?? []))
+      .catch(() => setCustomers([]))
+  }, [])
 
   const MONTHS = ["2026-01", "2026-02", "2026-03", "2026-04", "2026-05", "2026-06"]
 
@@ -78,7 +89,7 @@ export default function VerticalManagementPage() {
         m.grid.includes(managerSearch.trim())
       )
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rankBy, managerSearch, selectedMonth])
+  }, [rankBy, managerSearch, selectedMonth, managers])
 
   const importStats = {
     file: "支行客户名单_2026_06.xlsx",
@@ -96,14 +107,14 @@ export default function VerticalManagementPage() {
     return customers.filter(
       (c) => c.managerName === drillManager.name && c.introducedAt
     )
-  }, [drillManager])
+  }, [drillManager, customers])
 
   // 本月新增存贷客户清单（按经理筛选）
   const newDepositCustomers = useMemo(() => {
     const list = customers.filter((c) => c.avgDeposit > 0)
     if (filterManager === "all") return list.slice(0, 30)
     return list.filter((c) => c.managerName === filterManager).slice(0, 30)
-  }, [filterManager])
+  }, [filterManager, customers])
 
   // 扩中客群贷款统计（含本月新增贷款）
   const potentialLoanStats = useMemo(() => {
@@ -126,7 +137,7 @@ export default function VerticalManagementPage() {
       const vsLastMonthNewLoan = m.vsLastMonthLoan
       return { manager: m, count, totalLoan, change, newLoan, vsLastMonthNewLoan }
     }).sort((a, b) => b.newLoan - a.newLoan)
-  }, [])
+  }, [managers, customers])
 
   return (
     <div className="px-6 py-6 space-y-6">
@@ -207,7 +218,7 @@ export default function VerticalManagementPage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <ManagerRanking />
+            <ManagerRanking managers={managers} />
           </CardContent>
         </Card>
 

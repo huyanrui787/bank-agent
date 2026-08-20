@@ -1,14 +1,29 @@
 import type { AccessTokenPayload } from "./jwt"
 
+/**
+ * 结构化数据范围（替代原先硬编码字段名的 SQL WHERE 字符串）。
+ * 这里只表达「逻辑字段 + 值」，真实列名的转译由数据源连接器（lib/datasource）负责，
+ * 使数据范围下沉与具体库的列名解耦 —— 换真实库时无需改这里的字段名。
+ */
+
+/** 单字段等值过滤：customer/manager/alert 域的通用形态 */
+export type ScopeEq = {
+  kind: "eq"
+  field: string // 业务逻辑字段名（managerName / branch / id）
+  value: string
+}
+
+/** 支行维度的预警过滤：借 customer 表的 branch 字段间接过滤 alert */
+export type ScopeAlertBranch = {
+  kind: "customerBranch"
+  branch: string
+}
+
 export type DataScope = {
   type: "personal" | "branch" | "bank"
-  // SQL WHERE fragments (appended with AND to existing queries)
-  customerWhere: string
-  customerParams: unknown[]
-  alertWhere: string
-  alertParams: unknown[]
-  managerWhere: string
-  managerParams: unknown[]
+  customer: ScopeEq | null
+  manager: ScopeEq | null
+  alert: ScopeEq | ScopeAlertBranch | null
   // Human-readable label for audit logs
   label: string
 }
@@ -18,35 +33,26 @@ export function buildScope(user: Pick<AccessTokenPayload, "role" | "name" | "bra
     case "manager":
       return {
         type: "personal",
-        customerWhere: "manager_name = ?",
-        customerParams: [user.name],
-        alertWhere: "manager_name = ?",
-        alertParams: [user.name],
-        managerWhere: "id = ?",
-        managerParams: [user.managerId ?? ""],
+        customer: { kind: "eq", field: "managerName", value: user.name },
+        manager: { kind: "eq", field: "id", value: user.managerId ?? "" },
+        alert: { kind: "eq", field: "managerName", value: user.name },
         label: `本人（${user.name}）`,
       }
     case "sub_branch_head":
       return {
         type: "branch",
-        customerWhere: "branch = ?",
-        customerParams: [user.branch ?? ""],
-        alertWhere: `customer_id IN (SELECT id FROM customers WHERE branch = ?)`,
-        alertParams: [user.branch ?? ""],
-        managerWhere: "branch = ?",
-        managerParams: [user.branch ?? ""],
+        customer: { kind: "eq", field: "branch", value: user.branch ?? "" },
+        manager: { kind: "eq", field: "branch", value: user.branch ?? "" },
+        alert: { kind: "customerBranch", branch: user.branch ?? "" },
         label: `本支行（${user.branch}）`,
       }
     default:
       // branch_admin, compliance, readonly — full access
       return {
         type: "bank",
-        customerWhere: "1=1",
-        customerParams: [],
-        alertWhere: "1=1",
-        alertParams: [],
-        managerWhere: "1=1",
-        managerParams: [],
+        customer: null,
+        manager: null,
+        alert: null,
         label: "全行",
       }
   }
