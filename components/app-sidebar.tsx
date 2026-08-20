@@ -31,7 +31,7 @@ const baseItems: NavItem[] = [
   { href: "/alerts", label: "业务预警", icon: AlertTriangle },
   { href: "/analysis", label: "查询分析", icon: Search },
   { href: "/qa", label: "问答助手", icon: MessageSquare },
-  { href: "/skills", label: "Skill Center", icon: Sparkles },
+  { href: "/skills", label: "技能中心", icon: Sparkles },
   { href: "/workflow", label: "编排工作流", icon: GitBranch },
 ]
 

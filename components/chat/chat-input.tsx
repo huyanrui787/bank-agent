@@ -40,7 +40,7 @@ export function ChatInput({ onSend, loading, loadedSkillIds = [], onUnloadSkill 
           <>
             <span className="text-xs text-muted-foreground inline-flex items-center gap-1 shrink-0">
               <Sparkles className="h-3 w-3 text-primary" />
-              <span className="text-primary font-medium">Skill</span>
+              <span className="text-primary font-medium">技能</span>
             </span>
             <div className="flex flex-wrap items-center gap-1">
               {loadedSkillIds.map((id) => {

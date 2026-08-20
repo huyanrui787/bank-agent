@@ -95,11 +95,11 @@ function SkillDetailDialog({
 
         <div className="flex items-center justify-between pt-1">
           <div className="text-xs text-muted-foreground">
-            {loaded ? "此 Skill 已注入 AI 上下文" : "加载后将注入 AI 上下文"}
+            {loaded ? "此技能已注入 AI 上下文" : "加载后将注入 AI 上下文"}
           </div>
           <Button size="sm" variant={loaded ? "outline" : "default"}
             onClick={() => { onToggle(); onOpenChange(false) }}>
-            {loaded ? "卸载 Skill" : "加载 Skill"}
+            {loaded ? "卸载技能" : "加载技能"}
           </Button>
         </div>
       </DialogContent>
@@ -230,7 +230,7 @@ function SkillFormSheet({
       <SheetContent className="w-full sm:max-w-lg flex flex-col">
         <SheetHeader>
           <SheetTitle>
-            {isBuiltinEdit ? `编辑提示词：${initial?.name}` : (initial ? "编辑 Skill" : "新建自定义 Skill")}
+            {isBuiltinEdit ? `编辑提示词：${initial?.name}` : (initial ? "编辑技能" : "新建自定义技能")}
           </SheetTitle>
         </SheetHeader>
 
@@ -243,7 +243,7 @@ function SkillFormSheet({
               </div>
               <div className="space-y-1.5">
                 <label className="text-sm font-medium">描述</label>
-                <Input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="一句话说明 Skill 的作用" maxLength={200} />
+                <Input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="一句话说明技能的作用" maxLength={200} />
               </div>
               <div className="space-y-1.5">
                 <label className="text-sm font-medium">分类</label>
@@ -325,7 +325,7 @@ function ImportSheet({ open, onOpenChange, onImported }: {
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent className="w-full sm:max-w-lg flex flex-col">
-        <SheetHeader><SheetTitle>批量导入 Skill</SheetTitle></SheetHeader>
+        <SheetHeader><SheetTitle>批量导入技能</SheetTitle></SheetHeader>
         <div className="flex-1 overflow-y-auto px-6 py-4 space-y-3">
           <p className="text-xs text-muted-foreground">粘贴 JSON 数组，每项含 name / description / category / prompt。</p>
           <textarea
@@ -424,9 +424,9 @@ export default function SkillsPage() {
     <div className="px-6 py-6 space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold tracking-tight">Skill Center</h1>
+          <h1 className="text-xl font-semibold tracking-tight">技能中心</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Skill 是注入 AI 上下文的行为规范片段。加载后，AI 的回答风格和视角会真实改变。支持自定义创建。
+            技能是注入 AI 上下文的行为规范片段。加载后，AI 的回答风格和视角会真实改变。支持自定义创建。
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -435,7 +435,7 @@ export default function SkillsPage() {
             <Upload className="h-4 w-4 mr-1" /> 导入
           </Button>
           <Button size="sm" onClick={openNew}>
-            <Plus className="h-4 w-4 mr-1" /> 新建 Skill
+            <Plus className="h-4 w-4 mr-1" /> 新建技能
           </Button>
         </div>
       </div>

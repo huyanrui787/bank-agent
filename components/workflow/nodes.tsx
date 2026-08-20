@@ -100,7 +100,7 @@ export function SkillNode({ data, selected }: NodeProps) {
   const d = data as NodeData
   return (
     <BaseNode icon={<Sparkles className="h-3 w-3" />} color="#9333ea" data={d} selected={selected}>
-      <span>{String(d.skillId ?? "选择 Skill")}</span>
+      <span>{String(d.skillId ?? "选择技能")}</span>
     </BaseNode>
   )
 }

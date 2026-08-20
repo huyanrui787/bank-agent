@@ -129,9 +129,9 @@ for r in rows:
 
         {/* Skill node */}
         {type === "skill" && (
-          <Field label="选择 Skill">
+          <Field label="选择技能">
             <Select value={String(d.skillId ?? "")} onValueChange={(v) => onUpdate({ skillId: v })}>
-              <SelectTrigger className="text-xs"><SelectValue placeholder="选择 Skill" /></SelectTrigger>
+              <SelectTrigger className="text-xs"><SelectValue placeholder="选择技能" /></SelectTrigger>
               <SelectContent>
                 {BUILTIN_SKILLS.map((s) => (
                   <SelectItem key={s.id} value={s.id} className="text-xs">{s.name}</SelectItem>

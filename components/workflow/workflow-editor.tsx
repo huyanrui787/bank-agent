@@ -67,7 +67,7 @@ export default function WorkflowEditor() {
   function addNode(type: string) {
     const nid = randomId().slice(0, 8)
     const labels: Record<string, string> = {
-      llm: "LLM 节点", tool: "工具节点", codeact: "代码执行", condition: "条件分支", skill: "Skill 注入",
+      llm: "LLM 节点", tool: "工具节点", codeact: "代码执行", condition: "条件分支", skill: "技能注入",
     }
     setNodes((ns) => [...ns, {
       id: nid, type,
@@ -155,7 +155,7 @@ export default function WorkflowEditor() {
           {[
             { type: "llm", label: "+ LLM" }, { type: "tool", label: "+ 工具" },
             { type: "codeact", label: "+ 代码" }, { type: "condition", label: "+ 条件" },
-            { type: "skill", label: "+ Skill" },
+            { type: "skill", label: "+ 技能" },
           ].map((item) => (
             <button key={item.type} onClick={() => addNode(item.type)}
               className="text-[11px] px-2 py-1 rounded border border-border hover:bg-accent transition-colors">
