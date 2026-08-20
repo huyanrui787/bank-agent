@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from "react"
 import {
   ShieldAlert, Scale, AlignLeft, Megaphone, Building2, PhoneCall,
-  Eye, Plus, Pencil, Trash2, Sparkles, RotateCcw,
+  Eye, Plus, Pencil, Trash2, Sparkles, RotateCcw, Upload,
 } from "lucide-react"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
@@ -288,6 +288,63 @@ function SkillFormSheet({
   )
 }
 
+// ── Import sheet ───────────────────────────────────────────────────────────────
+
+function ImportSheet({ open, onOpenChange, onImported }: {
+  open: boolean; onOpenChange: (v: boolean) => void; onImported: () => void
+}) {
+  const [text, setText] = useState("")
+  const [importing, setImporting] = useState(false)
+
+  async function handleImport() {
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(text.trim())
+    } catch {
+      toast.error("JSON 解析失败，请检查格式"); return
+    }
+    const list = Array.isArray(parsed) ? parsed : [parsed]
+    if (list.length === 0) { toast.error("未解析到任何技能"); return }
+    let ok = 0, fail = 0
+    setImporting(true)
+    try {
+      for (const item of list) {
+        const s = item as { name?: string; description?: string; category?: string; prompt?: string }
+        if (!s?.name || !s?.prompt) { fail++; continue }
+        const res = await fetch("/api/skills", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: s.name, description: s.description ?? "", category: s.category ?? "自定义", prompt: s.prompt }),
+        })
+        if (res.ok) ok++; else fail++
+      }
+      toast.success(`导入完成：成功 ${ok} 个，失败 ${fail} 个`)
+      if (ok > 0) { onImported(); onOpenChange(false) }
+    } finally { setImporting(false) }
+  }
+
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent className="w-full sm:max-w-lg flex flex-col">
+        <SheetHeader><SheetTitle>批量导入 Skill</SheetTitle></SheetHeader>
+        <div className="flex-1 overflow-y-auto px-6 py-4 space-y-3">
+          <p className="text-xs text-muted-foreground">粘贴 JSON 数组，每项含 name / description / category / prompt。</p>
+          <textarea
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            rows={16}
+            placeholder={'[\n  {"name": "营销话术专家", "description": "生成个性化营销话术", "category": "营销", "prompt": "你是…"}\n]'}
+            className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring resize-y"
+          />
+        </div>
+        <SheetFooter className="gap-2 flex-row justify-end">
+          <Button variant="outline" onClick={() => onOpenChange(false)}>取消</Button>
+          <Button onClick={handleImport} disabled={importing}>{importing ? "导入中…" : "导入"}</Button>
+        </SheetFooter>
+      </SheetContent>
+    </Sheet>
+  )
+}
+
 // ── Page ───────────────────────────────────────────────────────────────────────
 
 export default function SkillsPage() {
@@ -297,6 +354,7 @@ export default function SkillsPage() {
   const [detailSkill, setDetailSkill] = useState<Skill | null>(null)
   const [editingSkill, setEditingSkill] = useState<Skill | undefined>()
   const [formOpen, setFormOpen] = useState(false)
+  const [importOpen, setImportOpen] = useState(false)
 
   const fetchSkills = useCallback(async () => {
     try {
@@ -373,6 +431,9 @@ export default function SkillsPage() {
         </div>
         <div className="flex items-center gap-2">
           {loadedCount > 0 ? <Badge variant="success">{loadedCount} 个已加载</Badge> : <Badge variant="muted">暂无加载</Badge>}
+          <Button size="sm" variant="outline" onClick={() => setImportOpen(true)}>
+            <Upload className="h-4 w-4 mr-1" /> 导入
+          </Button>
           <Button size="sm" onClick={openNew}>
             <Plus className="h-4 w-4 mr-1" /> 新建 Skill
           </Button>
@@ -419,6 +480,8 @@ export default function SkillsPage() {
         initial={editingSkill}
         onSave={handleSave}
       />
+
+      <ImportSheet open={importOpen} onOpenChange={setImportOpen} onImported={fetchSkills} />
     </div>
   )
 }

@@ -12,6 +12,7 @@
 
 import Database from "better-sqlite3"
 import path from "path"
+import { dataLevelOf, DATA_LEVELS, type DataLevel } from "@/lib/auth/data-classification"
 
 export type TableColumn = {
   name: string
@@ -19,6 +20,7 @@ export type TableColumn = {
   notNull: boolean
   pk: boolean
   comment?: string
+  dataLevel?: DataLevel
 }
 
 export type TableSchema = {
@@ -153,6 +155,7 @@ export function introspectSqlite(dbPath: string, opts?: { tables?: string[] }): 
           notNull: !!c.notnull,
           pk: !!c.pk,
           comment: columnComment(name, c.name),
+          dataLevel: dataLevelOf(c.name),
         })),
       }
     })
@@ -189,7 +192,8 @@ export function buildSchemaPrompt(schema: DbSchema | undefined, focusTable?: str
     for (const c of t.columns) {
       const desc = c.comment ? ` — ${c.comment}` : ""
       const key = c.pk ? " [主键]" : ""
-      lines.push(`- ${c.name} ${c.type}${key}${desc}`)
+      const lvl = c.dataLevel ? ` [${c.dataLevel}${DATA_LEVELS[c.dataLevel].label}]` : ""
+      lines.push(`- ${c.name} ${c.type}${key}${lvl}${desc}`)
     }
   }
   return lines.join("\n")

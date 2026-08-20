@@ -51,7 +51,7 @@ _DB_NOTES = """
 # 图表输出格式（在 print 的文本中嵌入）：
 #   <<<CHART:{"type":"bar","title":"...","data":[{"name":"...","value":...},...],
 #             "xKey":"name","yKeys":[{"key":"value","label":"...","color":"#1e40af"}]}>>>
-# 支持的图表类型：bar / line / pie
+# 支持的图表类型：bar / line / pie / treemap
 # 示例：
 #   print('<<<CHART:' + json.dumps(chart_obj) + '>>>')
 """

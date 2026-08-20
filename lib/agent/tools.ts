@@ -198,7 +198,7 @@ export const toolDefs: ToolDef[] = [
 - query(sql, params=None) → list[dict]   执行 SQL，返回字典列表
 - query_one(sql, params=None) → dict     查询单行
 - show_table(rows, max_rows=20)          以 Markdown 表格打印查询结果
-- emit_chart(chart_type, title, data, x_key, y_keys)  输出图表，chart_type='bar'|'line'|'pie'
+- emit_chart(chart_type, title, data, x_key, y_keys)  输出图表，chart_type='bar'|'line'|'pie'|'treemap'
 
 【重要】当前数据源的真实表结构与字段名见 System Prompt 末尾的「数据字典」。写 SQL 必须用字典里的真实表名/字段名，禁止臆造。若字典为空，回退使用默认库 bank.db（customers/managers/alerts/visits/products）。若用户指定外部数据库，传入 datasourceId。
 金额单位：元，显示时除以 10000 转为"万"。
@@ -218,7 +218,7 @@ emit_chart("bar", "各经理日均存款（万）", rows, "name", [{"key": "dep"
 ]
 
 export type ChartSpec = {
-  type: "bar" | "line" | "pie"
+  type: "bar" | "line" | "pie" | "treemap"
   title: string
   data: { name: string; [key: string]: unknown }[]
   xKey: string

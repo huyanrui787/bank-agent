@@ -10,6 +10,8 @@ type CustomerLike = {
 
 /**
  * Apply display-layer desensitization when `maskPii` is true.
+ * 脱敏遵循字段级数据分级（lib/auth/data-classification.ts）：
+ *   L3 敏感（身份证/手机号/住址）全掩、L2 内部（姓名/存款金额）部分掩、L1 公开（网格/支行）可见。
  * The DB already stores half-masked phone/id values; this adds a second layer
  * for roles flagged as `mask_pii`（如合规 / 只读）。
  */

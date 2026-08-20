@@ -14,6 +14,7 @@ import {
   Tooltip,
   Legend,
   ResponsiveContainer,
+  Treemap,
 } from "recharts"
 import type { ChartSpec } from "@/lib/agent/tools"
 
@@ -101,6 +102,19 @@ function SingleChart({ chart }: { chart: ChartSpec }) {
               />
             ))}
           </LineChart>
+        </ResponsiveContainer>
+      </div>
+    )
+  }
+
+  if (type === "treemap") {
+    return (
+      <div>
+        <div className="text-sm font-medium mb-3">{title}</div>
+        <ResponsiveContainer width="100%" height={260}>
+          <Treemap data={data} dataKey={yKeys[0]?.key ?? "value"} nameKey={xKey} stroke="#fff">
+            <Tooltip formatter={(v) => [v, yKeys[0]?.label ?? ""]} />
+          </Treemap>
         </ResponsiveContainer>
       </div>
     )
