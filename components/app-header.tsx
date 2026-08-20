@@ -20,7 +20,7 @@ export function AppHeader() {
 
   const initial = user?.name?.[0] ?? "?"
   const displayName = user ? `${user.name}${user.branch ? " · " + user.branch : ""}` : ""
-  const roleLabel = user ? (ROLE_LABELS[user.role] ?? user.role) : ""
+  const roleLabel = user ? (user.roleName ?? ROLE_LABELS[user.role] ?? user.role) : ""
 
   return (
     <header className="flex h-14 items-center justify-between gap-4 border-b border-border bg-card px-6">

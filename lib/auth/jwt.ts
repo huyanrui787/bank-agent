@@ -11,7 +11,7 @@ const secret = () => {
 export type AccessTokenPayload = {
   sub: string       // users.id
   name: string      // display_name
-  role: "manager" | "sub_branch_head" | "branch_admin" | "compliance" | "readonly"
+  role: string
   branch: string | null
   grid: string | null
   managerId: string | null

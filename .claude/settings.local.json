@@ -43,7 +43,9 @@
       "Bash(node-gyp rebuild *)",
       "Bash(kill 59621)",
       "Bash(PORT=3015 pnpm dev)",
-      "Bash(echo \"PID: $!\")"
+      "Bash(echo \"PID: $!\")",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)"
     ]
   }
 }

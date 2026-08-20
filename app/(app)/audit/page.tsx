@@ -54,7 +54,7 @@ export default function AuditPage() {
   const [verifying, setVerifying] = useState(false)
 
   useEffect(() => {
-    if (!loading && user && !["branch_admin", "compliance"].includes(user.role)) {
+    if (!loading && user && !user.permissions?.includes("view_audit")) {
       router.replace("/")
     }
   }, [user, loading, router])
@@ -80,7 +80,7 @@ export default function AuditPage() {
 
   useEffect(() => {
     /* eslint-disable react-hooks/set-state-in-effect -- 挂载/角色就绪后拉取日志（catch 中含 sonner toast 副作用） */
-    if (user && ["branch_admin", "compliance"].includes(user.role)) {
+    if (user && user.permissions?.includes("view_audit")) {
       fetchLogs()
     }
     /* eslint-enable react-hooks/set-state-in-effect */
@@ -110,7 +110,7 @@ export default function AuditPage() {
   const totalPages = Math.ceil(total / pageSize)
 
   if (loading) return <div className="p-8 text-muted-foreground text-sm">加载中…</div>
-  if (!user || !["branch_admin", "compliance"].includes(user.role)) return null
+  if (!user || !user.permissions?.includes("view_audit")) return null
 
   return (
     <div className="p-6 space-y-4">

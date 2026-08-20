@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { z } from "zod"
 import { getDb } from "@/lib/db"
 import { userFromHeaders } from "@/lib/auth/scope"
+import { can } from "@/lib/auth/permissions"
 
 export const runtime = "nodejs"
 
@@ -20,6 +21,7 @@ export async function PUT(
   const { id } = await params
   const user = userFromHeaders(req.headers)
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  if (!can(user.role, "manage_skills")) return NextResponse.json({ error: "Forbidden" }, { status: 403 })
 
   const db = getDb()
   const existing = db.prepare("SELECT id FROM custom_skills WHERE id = ?").get(id)
@@ -53,6 +55,7 @@ export async function DELETE(
   const { id } = await params
   const user = userFromHeaders(req.headers)
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  if (!can(user.role, "manage_skills")) return NextResponse.json({ error: "Forbidden" }, { status: 403 })
 
   const db = getDb()
   const existing = db.prepare("SELECT id FROM custom_skills WHERE id = ?").get(id)

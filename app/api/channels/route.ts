@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { z } from "zod"
 import { getDb } from "@/lib/db"
 import { userFromHeaders } from "@/lib/auth/scope"
+import { can } from "@/lib/auth/permissions"
 
 export const runtime = "nodejs"
 
@@ -79,8 +80,8 @@ const createSchema = z.object({
 export async function POST(req: NextRequest) {
   const user = userFromHeaders(req.headers)
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-  if (!["branch_admin"].includes(user.role)) {
-    return NextResponse.json({ error: "仅分行管理员可配置通知渠道" }, { status: 403 })
+  if (!can(user.role, "manage_channels")) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 })
   }
 
   const body = await req.json().catch(() => null)

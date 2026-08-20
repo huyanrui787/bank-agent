@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { z } from "zod"
 import { getDb } from "@/lib/db"
 import { userFromHeaders } from "@/lib/auth/scope"
+import { can } from "@/lib/auth/permissions"
 import { encryptSecret } from "@/lib/security/encrypt"
 import { writeAuditLog } from "@/lib/audit/log"
 
@@ -13,7 +14,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   const { id } = await params
   const user = userFromHeaders(req.headers)
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-  if (user.role !== "branch_admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+  if (!can(user.role, "manage_datasources")) return NextResponse.json({ error: "Forbidden" }, { status: 403 })
 
   const db = getDb()
   const row = db.prepare("SELECT * FROM data_sources WHERE id = ?").get(id) as DsRow | undefined
@@ -43,7 +44,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   const { id } = await params
   const user = userFromHeaders(req.headers)
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-  if (user.role !== "branch_admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+  if (!can(user.role, "manage_datasources")) return NextResponse.json({ error: "Forbidden" }, { status: 403 })
 
   const db = getDb()
   const existing = db.prepare("SELECT id FROM data_sources WHERE id = ?").get(id)
@@ -94,7 +95,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   const { id } = await params
   const user = userFromHeaders(req.headers)
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-  if (user.role !== "branch_admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+  if (!can(user.role, "manage_datasources")) return NextResponse.json({ error: "Forbidden" }, { status: 403 })
 
   const db = getDb()
   const row = db.prepare("SELECT name, type FROM data_sources WHERE id = ?").get(id) as { name: string; type: string } | undefined

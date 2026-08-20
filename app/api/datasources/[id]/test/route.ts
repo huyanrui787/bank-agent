@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getDb } from "@/lib/db"
 import { userFromHeaders } from "@/lib/auth/scope"
+import { can } from "@/lib/auth/permissions"
 import { decryptSecret } from "@/lib/security/encrypt"
 
 export const runtime = "nodejs"
@@ -11,7 +12,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const { id } = await params
   const user = userFromHeaders(req.headers)
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-  if (user.role !== "branch_admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+  if (!can(user.role, "manage_datasources")) return NextResponse.json({ error: "Forbidden" }, { status: 403 })
 
   const db = getDb()
   const row = db.prepare("SELECT * FROM data_sources WHERE id = ?").get(id) as DsRow | undefined

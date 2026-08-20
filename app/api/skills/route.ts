@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { z } from "zod"
 import { getDb } from "@/lib/db"
 import { userFromHeaders } from "@/lib/auth/scope"
+import { can } from "@/lib/auth/permissions"
 import { BUILTIN_SKILLS } from "@/lib/agent/skill-store"
 
 export const runtime = "nodejs"
@@ -43,6 +44,7 @@ const createSchema = z.object({
 export async function POST(req: NextRequest) {
   const user = userFromHeaders(req.headers)
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  if (!can(user.role, "manage_skills")) return NextResponse.json({ error: "Forbidden" }, { status: 403 })
 
   const body = await req.json().catch(() => null)
   const parsed = createSchema.safeParse(body)

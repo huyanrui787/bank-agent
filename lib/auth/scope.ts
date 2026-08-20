@@ -1,4 +1,5 @@
 import type { AccessTokenPayload } from "./jwt"
+import { getRoleDataScope } from "./permissions"
 
 /**
  * 结构化数据范围（替代原先硬编码字段名的 SQL WHERE 字符串）。
@@ -29,8 +30,9 @@ export type DataScope = {
 }
 
 export function buildScope(user: Pick<AccessTokenPayload, "role" | "name" | "branch" | "managerId">): DataScope {
-  switch (user.role) {
-    case "manager":
+  // 数据范围类型由角色配置（roles.data_scope）决定，范围「值」取自用户自身字段。
+  switch (getRoleDataScope(user.role)) {
+    case "personal":
       return {
         type: "personal",
         customer: { kind: "eq", field: "managerName", value: user.name },
@@ -38,7 +40,7 @@ export function buildScope(user: Pick<AccessTokenPayload, "role" | "name" | "bra
         alert: { kind: "eq", field: "managerName", value: user.name },
         label: `本人（${user.name}）`,
       }
-    case "sub_branch_head":
+    case "branch":
       return {
         type: "branch",
         customer: { kind: "eq", field: "branch", value: user.branch ?? "" },
@@ -47,7 +49,7 @@ export function buildScope(user: Pick<AccessTokenPayload, "role" | "name" | "bra
         label: `本支行（${user.branch}）`,
       }
     default:
-      // branch_admin, compliance, readonly — full access
+      // bank — full access
       return {
         type: "bank",
         customer: null,

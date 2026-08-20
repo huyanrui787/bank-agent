@@ -9,7 +9,8 @@ export type AuditAction =
   | "ai.chat.query" | "ai.codeact.exec" | "ai.qa.query"
   | "alert.status.update" | "alert.notification.push"
   | "access.denied"
-  | "admin.user.create" | "admin.user.update"
+  | "admin.user.create" | "admin.user.update" | "admin.user.delete"
+  | "admin.role.create" | "admin.role.update" | "admin.role.delete"
   | "admin.datasource.create" | "admin.datasource.update" | "admin.datasource.delete"
 
 export type AuditEntry = {

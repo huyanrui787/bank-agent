@@ -9,6 +9,8 @@ export type UserInfo = {
   branch: string | null
   grid: string | null
   managerId: string | null
+  roleName: string | null
+  permissions: string[]
 }
 
 type UserState = {
@@ -27,7 +29,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
         if (!r.ok) throw new Error("unauthenticated")
         return r.json()
       })
-      .then((data: UserInfo) => setState({ user: data, loading: false }))
+      .then((data: UserInfo) => setState({ user: { ...data, permissions: data.permissions ?? [] }, loading: false }))
       .catch(() => setState({ user: null, loading: false }))
   }, [])
 

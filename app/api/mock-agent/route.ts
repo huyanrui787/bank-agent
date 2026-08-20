@@ -4,6 +4,7 @@ import { streamLlmAgent, isLlmConfigured } from "@/lib/agent/llm-agent"
 import { streamMockAgent } from "@/lib/agent/mock-tools"
 import { getSkillPrompts, BUILTIN_SKILLS } from "@/lib/agent/skill-store"
 import { userFromHeaders, buildScope } from "@/lib/auth/scope"
+import { can } from "@/lib/auth/permissions"
 import { writeAuditLog } from "@/lib/audit/log"
 import { getDb } from "@/lib/db"
 import { getDefaultSchema, type DbSchema } from "@/lib/db/schema-info"
@@ -26,6 +27,9 @@ export async function POST(req: NextRequest) {
   const user = userFromHeaders(req.headers)
   if (!user) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 })
+  }
+  if (!can(user.role, "ai_chat")) {
+    return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403 })
   }
 
   let parsed

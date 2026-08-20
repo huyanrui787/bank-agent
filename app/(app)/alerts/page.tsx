@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { Clock, Download, FileSpreadsheet, Filter, Search } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -17,7 +17,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { toast } from "sonner"
 import { AlertCard } from "@/components/alert-card"
 import { AlertDetailDrawer } from "@/components/alert-detail-drawer"
-import { alerts as initialAlerts, alertTypeLabel } from "@/lib/mock/alerts"
+import { alertTypeLabel } from "@/lib/mock/alerts"
 import type { AlertStatus, BusinessAlert } from "@/lib/mock/types"
 
 function daysUntil(dateStr: string): number {
@@ -27,7 +27,14 @@ function daysUntil(dateStr: string): number {
 }
 
 export default function AlertsPage() {
-  const [items, setItems] = useState<BusinessAlert[]>(initialAlerts)
+  const [items, setItems] = useState<BusinessAlert[]>([])
+
+  useEffect(() => {
+    fetch("/api/alerts")
+      .then((r) => r.json())
+      .then((d) => setItems(d.alerts ?? []))
+      .catch(() => setItems([]))
+  }, [])
   const [keyword, setKeyword] = useState("")
   const [typeFilter, setTypeFilter] = useState<string>("all")
   const [severityFilter, setSeverityFilter] = useState<string>("all")

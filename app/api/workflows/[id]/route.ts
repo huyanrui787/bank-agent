@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { z } from "zod"
 import { getDb } from "@/lib/db"
 import { userFromHeaders } from "@/lib/auth/scope"
+import { can } from "@/lib/auth/permissions"
 
 export const runtime = "nodejs"
 
@@ -28,6 +29,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   const { id } = await params
   const user = userFromHeaders(req.headers)
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  if (!can(user.role, "manage_workflows")) return NextResponse.json({ error: "Forbidden" }, { status: 403 })
 
   const existing = getDb().prepare("SELECT id FROM workflows WHERE id = ?").get(id)
   if (!existing) return NextResponse.json({ error: "不存在" }, { status: 404 })
@@ -52,6 +54,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   const { id } = await params
   const user = userFromHeaders(req.headers)
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  if (!can(user.role, "manage_workflows")) return NextResponse.json({ error: "Forbidden" }, { status: 403 })
   getDb().prepare("DELETE FROM workflows WHERE id = ?").run(id)
   return NextResponse.json({ ok: true })
 }

@@ -3,6 +3,7 @@ import { z } from "zod"
 import { getDb } from "@/lib/db"
 import { DATA_SOURCE_TYPES } from "@/lib/db/schema"
 import { userFromHeaders } from "@/lib/auth/scope"
+import { can } from "@/lib/auth/permissions"
 import { encryptSecret } from "@/lib/security/encrypt"
 import { writeAuditLog } from "@/lib/audit/log"
 
@@ -52,7 +53,7 @@ export async function GET(req: NextRequest) {
   const rows = db.prepare("SELECT * FROM data_sources ORDER BY created_at DESC").all() as DsRow[]
   // 非管理员只回传 id/name/type（供工作台选数据源），不回传 host/端口/账号等连接信息
   const list = rows.map((row) =>
-    user.role === "branch_admin"
+    can(user.role, "manage_datasources")
       ? maskRow(row)
       : { id: row.id, name: row.name, type: row.type, enabled: Boolean(row.enabled) }
   )
@@ -73,7 +74,7 @@ const createSchema = z.object({
 export async function POST(req: NextRequest) {
   const user = userFromHeaders(req.headers)
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-  if (user.role !== "branch_admin") return NextResponse.json({ error: "仅分行管理员可配置数据源" }, { status: 403 })
+  if (!can(user.role, "manage_datasources")) return NextResponse.json({ error: "Forbidden" }, { status: 403 })
 
   const body = await req.json().catch(() => null)
   const parsed = createSchema.safeParse(body)

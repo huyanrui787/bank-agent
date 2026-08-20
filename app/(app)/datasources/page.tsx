@@ -279,7 +279,7 @@ export default function DatasourcesPage() {
   const [editing, setEditing] = useState<Datasource | undefined>()
 
   useEffect(() => {
-    if (!loading && user && user.role !== "branch_admin") router.replace("/")
+    if (!loading && user && !user.permissions?.includes("manage_datasources")) router.replace("/")
   }, [user, loading, router])
 
   const fetchDs = useCallback(async () => {
@@ -291,7 +291,7 @@ export default function DatasourcesPage() {
     } finally { setFetching(false) }
   }, [])
 
-  useEffect(() => { if (user?.role === "branch_admin") fetchDs() }, [user, fetchDs])
+  useEffect(() => { if (user?.permissions?.includes("manage_datasources")) fetchDs() }, [user, fetchDs])
 
   async function toggleEnabled(ds: Datasource) {
     await fetch(`/api/datasources/${ds.id}`, {
@@ -309,7 +309,7 @@ export default function DatasourcesPage() {
   }
 
   if (loading) return <div className="p-8 text-sm text-muted-foreground">加载中…</div>
-  if (!user || user.role !== "branch_admin") return null
+  if (!user || !user.permissions?.includes("manage_datasources")) return null
 
   return (
     <div className="p-6 space-y-5">

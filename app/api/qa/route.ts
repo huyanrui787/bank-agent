@@ -3,6 +3,7 @@ import { z } from "zod"
 import { searchKnowledge } from "@/lib/mock/knowledge-base"
 import { callLlm } from "@/lib/agent/llm"
 import { userFromHeaders } from "@/lib/auth/scope"
+import { can } from "@/lib/auth/permissions"
 import { writeAuditLog } from "@/lib/audit/log"
 
 const qaSchema = z.object({
@@ -25,6 +26,7 @@ export async function POST(req: NextRequest) {
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
+  if (!can(user.role, "ai_chat")) return NextResponse.json({ error: "Forbidden" }, { status: 403 })
 
   const body = await req.json()
   const parsed = qaSchema.safeParse(body)

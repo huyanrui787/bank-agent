@@ -64,7 +64,7 @@ export async function GET(req: NextRequest) {
     rows = ds.scanAlerts({}, scope, ALL)
     recordCount = rows.length
   } else {
-    rows = ds.filterCustomers({}, scope, undefined, ALL)
+    rows = ds.filterCustomers({}, scope, user.role, ALL)
     recordCount = rows.length
   }
 

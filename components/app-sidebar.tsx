@@ -15,6 +15,7 @@ import {
   Radio,
   Database,
   GitBranch,
+  ShieldCheck,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useUser } from "@/lib/hooks/use-user"
@@ -31,8 +32,6 @@ const baseItems = [
   { href: "/workflow", label: "编排工作流", icon: GitBranch },
 ]
 
-const AUDIT_ROLES = new Set(["branch_admin", "compliance"])
-
 export function AppSidebar() {
   const pathname = usePathname()
   const { user } = useUser()
@@ -40,14 +39,17 @@ export function AppSidebar() {
 
   const items = [
     ...baseItems,
-    ...(user && AUDIT_ROLES.has(user.role)
+    ...(user?.permissions?.includes("view_audit")
       ? [{ href: "/audit", label: "审计日志", icon: ClipboardList }]
       : []),
-    ...(user?.role === "branch_admin"
-      ? [
-          { href: "/channels",    label: "渠道配置", icon: Radio },
-          { href: "/datasources", label: "数据源",   icon: Database },
-        ]
+    ...(user?.permissions?.includes("manage_users")
+      ? [{ href: "/permissions", label: "权限配置", icon: ShieldCheck }]
+      : []),
+    ...(user?.permissions?.includes("manage_channels")
+      ? [{ href: "/channels", label: "渠道配置", icon: Radio }]
+      : []),
+    ...(user?.permissions?.includes("manage_datasources")
+      ? [{ href: "/datasources", label: "数据源", icon: Database }]
       : []),
   ]
 

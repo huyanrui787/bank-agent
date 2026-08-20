@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
+import { getDb } from "@/lib/db"
+import { getRolePermissions } from "@/lib/auth/permissions"
 
 export const runtime = "nodejs"
 
@@ -10,9 +12,9 @@ export async function GET(req: NextRequest) {
   const grid = req.headers.get("x-user-grid") || null
   const managerId = req.headers.get("x-user-manager-id") || null
 
-  if (!id || !name || !role) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-  }
+  if (!id || !name || !role) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+
+  const roleName = (getDb().prepare("SELECT name FROM roles WHERE code = ?").get(role) as { name: string } | undefined)?.name ?? null
 
   return NextResponse.json({
     id,
@@ -21,5 +23,7 @@ export async function GET(req: NextRequest) {
     branch: branch ? decodeURIComponent(branch) || null : null,
     grid: grid ? decodeURIComponent(grid) || null : null,
     managerId,
+    roleName,
+    permissions: [...getRolePermissions(role)],
   })
 }

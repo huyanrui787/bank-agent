@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { z } from "zod"
 import { getDb } from "@/lib/db"
 import { userFromHeaders } from "@/lib/auth/scope"
+import { can } from "@/lib/auth/permissions"
 
 export const runtime = "nodejs"
 
@@ -21,7 +22,7 @@ export async function GET(
   const { id } = await params
   const user = userFromHeaders(req.headers)
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-  if (user.role !== "branch_admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+  if (!can(user.role, "manage_channels")) return NextResponse.json({ error: "Forbidden" }, { status: 403 })
 
   const db = getDb()
   const row = db.prepare("SELECT * FROM notification_channels WHERE id = ?").get(id) as DbChannel | undefined
@@ -43,7 +44,7 @@ export async function PUT(
   const { id } = await params
   const user = userFromHeaders(req.headers)
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-  if (user.role !== "branch_admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+  if (!can(user.role, "manage_channels")) return NextResponse.json({ error: "Forbidden" }, { status: 403 })
 
   const db = getDb()
   const existing = db.prepare("SELECT id, config FROM notification_channels WHERE id = ?").get(id) as { id: string; config: string } | undefined
@@ -84,7 +85,7 @@ export async function DELETE(
   const { id } = await params
   const user = userFromHeaders(req.headers)
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-  if (user.role !== "branch_admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+  if (!can(user.role, "manage_channels")) return NextResponse.json({ error: "Forbidden" }, { status: 403 })
 
   const db = getDb()
   db.prepare("DELETE FROM notification_channels WHERE id = ?").run(id)

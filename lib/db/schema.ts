@@ -99,7 +99,7 @@ CREATE TABLE IF NOT EXISTS users (
   username TEXT UNIQUE NOT NULL,
   password_hash TEXT NOT NULL,
   display_name TEXT NOT NULL,
-  role TEXT NOT NULL CHECK(role IN ('manager','sub_branch_head','branch_admin','compliance','readonly')),
+  role TEXT NOT NULL,
   branch TEXT,
   grid TEXT,
   manager_id TEXT,
@@ -195,4 +195,21 @@ CREATE TABLE IF NOT EXISTS tasks (
   created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
 CREATE INDEX IF NOT EXISTS idx_tasks_user ON tasks(user_id, enabled, done);
+
+CREATE TABLE IF NOT EXISTS roles (
+  code TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  data_scope TEXT NOT NULL DEFAULT 'bank' CHECK(data_scope IN ('personal','branch','bank')),
+  builtin INTEGER DEFAULT 0,
+  mask_pii INTEGER DEFAULT 0,
+  description TEXT DEFAULT '',
+  created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+
+CREATE TABLE IF NOT EXISTS role_permissions (
+  role_code TEXT NOT NULL REFERENCES roles(code) ON DELETE CASCADE,
+  action TEXT NOT NULL,
+  PRIMARY KEY (role_code, action)
+);
 `

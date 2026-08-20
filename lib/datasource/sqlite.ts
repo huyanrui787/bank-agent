@@ -5,6 +5,7 @@
  */
 import type Database from "better-sqlite3"
 import { desensitizeCustomer } from "@/lib/auth/desensitize"
+import { roleMasksPii } from "@/lib/db"
 import type { DataScope } from "@/lib/auth/scope"
 import type {
   Customer,
@@ -97,10 +98,7 @@ function toCustomer(row: Record<string, unknown>, role?: string): Customer {
     depositTerm: optStr(row.depositTerm) as Customer["depositTerm"],
     performanceOwner: optStr(row.performanceOwner),
   }
-  if (role === "compliance" || role === "readonly") {
-    return desensitizeCustomer(c, role)
-  }
-  return c
+  return desensitizeCustomer(c, role ? roleMasksPii(role) : false)
 }
 
 function toManager(row: Record<string, unknown>): Manager {

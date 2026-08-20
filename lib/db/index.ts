@@ -11,6 +11,7 @@ import { settlementFlows } from "@/lib/mock/settlement"
 import { guarantees } from "@/lib/mock/guarantee"
 import { desensitizeCustomer } from "@/lib/auth/desensitize"
 import { encryptSecret } from "@/lib/security/encrypt"
+import { BUILTIN_ROLES, BUILTIN_PERMISSIONS } from "@/lib/rbac/catalog"
 
 const DB_PATH = path.join(process.cwd(), "data", "bank.db")
 const ENTERPRISE_DB_PATH = path.join(process.cwd(), "data", "enterprise.db")
@@ -26,6 +27,10 @@ export function getDb(): Database.Database {
   _db.pragma("foreign_keys = ON")
   _db.exec(CREATE_TABLES)
   migrateDataSourceTypes(_db)
+  migrateUsersRoleCheck(_db)
+  migrateRolesMaskPii(_db)
+  seedRoles(_db)
+  seedRolePermissions(_db)
   seedIfEmpty(_db)
   seedUsers(_db)
   seedEnterpriseIfEmpty()
@@ -67,6 +72,56 @@ function migrateDataSourceTypes(db: Database.Database) {
     DROP TABLE data_sources;
     ALTER TABLE data_sources_new RENAME TO data_sources;
   `)
+}
+
+// 迁移：users 表旧版带 role CHECK（仅 5 个内置角色），自定义角色无法写入。
+// 检测到旧 CHECK 时重建表（保留数据，去掉 CHECK）。重建期间临时关闭外键约束。
+function migrateUsersRoleCheck(db: Database.Database) {
+  const ddl = (db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='users'").get() as { sql: string } | undefined)?.sql ?? ""
+  if (!ddl.includes("CHECK(role IN")) return
+
+  db.pragma("foreign_keys = OFF")
+  try {
+    db.exec(`
+      CREATE TABLE users_new (
+        id TEXT PRIMARY KEY,
+        username TEXT UNIQUE NOT NULL,
+        password_hash TEXT NOT NULL,
+        display_name TEXT NOT NULL,
+        role TEXT NOT NULL,
+        branch TEXT,
+        grid TEXT,
+        manager_id TEXT,
+        enabled INTEGER DEFAULT 1,
+        last_login_at TEXT,
+        created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+      );
+      INSERT INTO users_new
+        (id, username, password_hash, display_name, role, branch, grid, manager_id, enabled, last_login_at, created_at, updated_at)
+        SELECT id, username, password_hash, display_name, role, branch, grid, manager_id, enabled, last_login_at, created_at, updated_at
+        FROM users;
+      DROP TABLE users;
+      ALTER TABLE users_new RENAME TO users;
+    `)
+  } finally {
+    db.pragma("foreign_keys = ON")
+  }
+}
+
+// 迁移：roles 表新增 mask_pii 列（旧库补齐，并回填内置合规/只读角色）。
+function migrateRolesMaskPii(db: Database.Database) {
+  const cols = db.prepare("PRAGMA table_info(roles)").all() as { name: string }[]
+  if (cols.some((c) => c.name === "mask_pii")) return
+  db.exec("ALTER TABLE roles ADD COLUMN mask_pii INTEGER DEFAULT 0")
+  db.exec("UPDATE roles SET mask_pii = 1 WHERE code IN ('compliance','readonly')")
+}
+
+/** 角色是否需对客户 PII 二次脱敏（读 roles.mask_pii，缺失回退内置默认）。 */
+export function roleMasksPii(role: string): boolean {
+  const row = getDb().prepare("SELECT mask_pii FROM roles WHERE code = ?").get(role) as { mask_pii: number } | undefined
+  if (row) return Boolean(row.mask_pii)
+  return role === "compliance" || role === "readonly"
 }
 
 function seedIfEmpty(db: Database.Database) {
@@ -180,10 +235,7 @@ export function rowToCustomer(row: Record<string, unknown>, role?: string) {
     depositTerm: row.deposit_term as import("@/lib/mock/types").DepositTerm | undefined,
     performanceOwner: row.performance_owner as string | undefined,
   }
-  if (role === "compliance" || role === "readonly") {
-    return desensitizeCustomer(customer, role as "compliance" | "readonly")
-  }
-  return customer
+  return desensitizeCustomer(customer, role ? roleMasksPii(role) : false)
 }
 
 export function rowToManager(row: Record<string, unknown>) {
@@ -236,12 +288,41 @@ export type DbUser = {
   username: string
   password_hash: string
   display_name: string
-  role: "manager" | "sub_branch_head" | "branch_admin" | "compliance" | "readonly"
+  role: string
   branch: string | null
   grid: string | null
   manager_id: string | null
   enabled: number
   last_login_at: string | null
+}
+
+// 首次启动时 seed 内置角色（幂等：roles 非空则跳过，不覆盖用户后续改动）。
+function seedRoles(db: Database.Database) {
+  const count = (db.prepare("SELECT COUNT(*) as n FROM roles").get() as { n: number }).n
+  if (count > 0) return
+  const insert = db.prepare(`
+    INSERT INTO roles (code, name, data_scope, builtin, mask_pii, description)
+    VALUES (@code, @name, @dataScope, 1, @maskPii, @description)
+  `)
+  db.transaction(() => {
+    for (const r of BUILTIN_ROLES) {
+      insert.run({ code: r.code, name: r.name, dataScope: r.dataScope, maskPii: r.maskPii ? 1 : 0, description: r.description })
+    }
+  })()
+}
+
+// 首次启动时 seed 内置角色-权限映射（幂等：role_permissions 非空则跳过）。
+function seedRolePermissions(db: Database.Database) {
+  const insert = db.prepare(`
+    INSERT OR IGNORE INTO role_permissions (role_code, action) VALUES (?, ?)
+  `)
+  db.transaction(() => {
+    for (const [role, actions] of Object.entries(BUILTIN_PERMISSIONS)) {
+      for (const action of actions) {
+        insert.run(role, action)
+      }
+    }
+  })()
 }
 
 // Seed preset users — idempotent, runs on every startup
@@ -393,6 +474,15 @@ function seedDemoDatasources(db: Database.Database) {
     { id: "DS-guarantee", name: "担保关系库", type: "sqlite", host: null, port: null, db: "data/guarantee.db", user: null, pw: null },
     { id: "DS-mysql", name: "对公信贷库(MySQL)", type: "mysql", host: "127.0.0.1", port: 3306, db: "corp_credit", user: "root", pw: "demo123" },
     { id: "DS-pg", name: "企业画像库(PostgreSQL)", type: "postgresql", host: "127.0.0.1", port: 5432, db: "corp_profile", user: "postgres", pw: "demo123" },
+    { id: "DS-pgvector", name: "向量库(pgvector)", type: "vector_pgvector", host: "127.0.0.1", port: 5434, db: "vector_demo", user: "postgres", pw: "demo123" },
+    { id: "DS-es", name: "搜索引擎(Elasticsearch)", type: "elasticsearch", host: "127.0.0.1", port: 9200, db: null, user: null, pw: null },
+    { id: "DS-qdrant", name: "向量库(Qdrant)", type: "vector_qdrant", host: "127.0.0.1", port: 6333, db: null, user: null, pw: null },
+    { id: "DS-weaviate", name: "向量库(Weaviate)", type: "vector_weaviate", host: "127.0.0.1", port: 8080, db: null, user: null, pw: null },
+    { id: "DS-chroma", name: "向量库(Chroma)", type: "vector_chroma", host: "127.0.0.1", port: 8000, db: null, user: null, pw: null },
+    { id: "DS-milvus", name: "向量库(Milvus)", type: "vector_milvus", host: "127.0.0.1", port: 19530, db: null, user: null, pw: null },
+    { id: "DS-sqlserver", name: "信贷系统(SQL Server)", type: "sqlserver", host: "127.0.0.1", port: 1433, db: "master", user: "SA", pw: "Demo@12345" },
+    { id: "DS-oracle", name: "核心系统(Oracle)", type: "oracle", host: "127.0.0.1", port: 1521, db: "FREEPDB1", user: "system", pw: "demo1234" },
+    { id: "DS-db2", name: "数据仓库(DB2)", type: "db2", host: "127.0.0.1", port: 50000, db: "demo", user: "db2inst1", pw: "demo12345" },
   ]
   db.transaction(() => {
     for (const ds of datasources) {

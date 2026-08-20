@@ -534,7 +534,7 @@ def test_datasource(ds: DataSourcePayload):
             engine = sa.create_engine(url, connect_args={"connect_timeout": 8})
             with engine.connect() as c:
                 c.execute(sa.text("SELECT 1"))
-                row = c.execute(sa.text("SELECT extname FROM pg_extension WHERE extname = 'pgvector'")).fetchone()
+                row = c.execute(sa.text("SELECT extname FROM pg_extension WHERE extname = 'vector'")).fetchone()
                 if not row:
                     raise RuntimeError("pgvector 扩展未安装（请执行 CREATE EXTENSION vector）")
             engine.dispose()
