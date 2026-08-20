@@ -16,6 +16,7 @@ import { redactForLlm } from "@/lib/auth/desensitize"
 import { decryptSecret } from "@/lib/security/encrypt"
 import { buildSchemaPrompt } from "@/lib/db/schema-info"
 import { writeAuditLog } from "@/lib/audit/log"
+import { searchKnowledge as searchKnowledgeBase } from "@/lib/mock/knowledge-base"
 import type { ToolDef } from "@/lib/agent/llm"
 import type { AgentResultType } from "@/lib/agent/types"
 import type { AgentCtx } from "@/lib/agent/llm-agent"
@@ -179,6 +180,20 @@ export const toolDefs: ToolDef[] = [
           description: "目标数据表，根据用户意图自动选择",
         },
         limit: { type: "number", description: "返回条数，默认 20，最大 50" },
+      },
+    },
+  },
+  {
+    type: "function",
+    name: "searchKnowledge",
+    description:
+      "检索行内知识库（贷款政策/利率/合规要求/贷前调查/产品准入），回答客户经理的知识性问题并标注文件来源。",
+    parameters: {
+      type: "object",
+      additionalProperties: false,
+      required: ["query"],
+      properties: {
+        query: { type: "string", description: "用户的问题或关键词" },
       },
     },
   },
@@ -452,6 +467,20 @@ export const toolHandlers: Record<string, ToolHandler> = {
     }
   },
 
+  searchKnowledge(args) {
+    const q = String(args.query ?? "").trim()
+    const matches = searchKnowledgeBase(q)
+    if (matches.length === 0) {
+      return { textForModel: `知识库中未找到与「${q}」相关的内容。`, ui: null }
+    }
+    const evidence = matches.map((m) => `${m.category}｜${m.question}\n${m.answer}\n来源：${m.source}`).join("\n\n")
+    const sourcesMd = matches.map((m) => `- ${m.source}`).join("\n")
+    return {
+      textForModel: `知识库检索到 ${matches.length} 条相关内容：\n\n${evidence}\n\n请基于以上内容直接、准确地回答用户，并标注文件来源。`,
+      ui: { resultType: "report" as const, data: { generatedReport: `## 文件来源\n\n${sourcesMd}` } },
+    }
+  },
+
   async codeActAnalysis(args, ctx) {
     // LLM writes Python directly via `code`; `task` kept for backward-compat fallback
     const code = String(args.code ?? "").trim() || buildAnalysisCode(String(args.task ?? ""))
@@ -543,7 +572,7 @@ const BASE_INSTRUCTIONS = `你是「丰年银行 AI 客户经营助手」的内�
 3. 调用工具时，参数必须来自用户原话；不要凭空创造客户姓名、金额、风险等级、客户经理姓名。
 4. 工具返回 JSON 后，请用中文给出 2~3 句**简洁的业务结论**（不要复述参数，不要罗列字段）。
 5. 始终保持银行合规口吻：不输出未脱敏的真实身份证号/手机号；不臆造监管政策。
-6. 如果用户请求不属于已声明的工具（比如闲聊 / 通用知识），直接用中文简要回答即可，不调用工具。
+6. 如果用户请求是闲聊或与银行业务无关的通用知识，直接用中文简要回答；但涉及贷款政策、利率、合规要求、贷前调查、产品准入等知识性问题时，必须调用 searchKnowledge 检索知识库并标注文件来源，禁止凭模型通用知识作答或臆造政策条款。
 
 可用工具：
 - filterCustomers：客户清单筛选（仅传用户提及的条件，如 community / minAvgDeposit / hasOtherBankLoan / unusedCredit）
@@ -553,6 +582,7 @@ const BASE_INSTRUCTIONS = `你是「丰年银行 AI 客户经营助手」的内�
 - generateInvestigationReport：贷前调查报告（必传 query=客户姓名/编号）
 - generateScript：个性化话术生成（必传 query=客户姓名/编号，可选 scene=营销/催收/续存/转介绍）
 - queryDatabase：自动选表查询（可选 table=customers/managers/alerts/products/visits）
+- searchKnowledge：行内知识库检索（贷款政策/利率/合规/贷前调查/产品准入），回答知识性问题并标注来源
 - exportData：CSV 导出（必传 type ∈ {customers, managers, alerts}）
 - codeActAnalysis：**图表生成 / 衍生指标计算 / 跨表聚合**（必传 code=完整 Python，用 query()/emit_chart()，**沙箱只有标准库、禁止 import pandas/numpy**）。**有图表或复合指标需求时优先用此工具；普通筛选/预警/画像用上面专用工具。**
 

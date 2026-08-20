@@ -9,7 +9,6 @@ import {
   AlertTriangle,
   Search,
   Sparkles,
-  MessageSquare,
   ClipboardList,
   Bell,
   Radio,
@@ -30,7 +29,6 @@ const baseItems: NavItem[] = [
   { href: "/vertical-management", label: "垂直管理", icon: UserCog },
   { href: "/alerts", label: "业务预警", icon: AlertTriangle },
   { href: "/analysis", label: "查询分析", icon: Search },
-  { href: "/qa", label: "问答助手", icon: MessageSquare },
   { href: "/skills", label: "技能中心", icon: Sparkles },
   { href: "/workflow", label: "编排工作流", icon: GitBranch },
 ]
