@@ -1,6 +1,15 @@
 import type { Intent } from "./types"
 
 export function detectIntent(input: string): Intent {
+  // 知识问答：政策/利率/合规/准入等知识性问题（优先于其它意图，避免被"查询/分析"误匹配）
+  if (
+    ["政策", "利率", "合规", "额度", "准入", "反洗钱", "KYC", "展期", "贷前调查",
+     "黑名单", "限入", "受托支付", "LPR", "存款利率", "贷款利率", "申请条件",
+     "大额交易", "实地调查", "关联企业", "资金用途", "数据宝", "了解你的客户"].some((k) => input.includes(k))
+  ) {
+    return "knowledge"
+  }
+
   if (
     input.includes("客户清单") ||
     input.includes("梳理") ||

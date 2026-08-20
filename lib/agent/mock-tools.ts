@@ -5,6 +5,7 @@ import { depositProducts, loanProducts } from "@/lib/mock/products"
 import { visits } from "@/lib/mock/visits"
 import { generateScript } from "@/lib/mock/scripts"
 import { checkAdmissionRules } from "@/lib/mock/admission-rules"
+import { searchKnowledge } from "@/lib/mock/knowledge-base"
 import type { Customer, CustomerProfile } from "@/lib/mock/types"
 import type { AccessTokenPayload } from "@/lib/auth/jwt"
 import type { DataScope } from "@/lib/auth/scope"
@@ -88,6 +89,8 @@ export function runMockAgent(message: string, ctx?: MockAgentCtx): AgentResponse
       return handleQuery(message, ctx)
     case "export_data":
       return handleExport()
+    case "knowledge":
+      return handleKnowledge(message)
     default:
       return handleUnknown(message)
   }
@@ -356,6 +359,36 @@ function handleQuery(message: string, ctx?: MockAgentCtx): AgentResponse {
     resultType: "table",
     data,
     suggestedNextActions: ["导出结果", "进一步筛选", "生成分析报告"],
+  }
+}
+
+function handleKnowledge(message: string): AgentResponse {
+  const matches = searchKnowledge(message)
+  if (matches.length === 0) {
+    return {
+      intent: "knowledge",
+      summary: "知识库中未找到相关答案，请换个问法或咨询分行。",
+      steps: [
+        step(1, "识别需求", "识别为知识问答任务"),
+        step(2, "检索知识库", "未命中相关知识条目", "error"),
+      ],
+      resultType: "empty",
+      data: null,
+      suggestedNextActions: ["查询贷款利率", "咨询贷前调查要求", "了解反洗钱报告标准"],
+    }
+  }
+  const report = matches.map((m) => `### ${m.question}\n\n${m.answer}\n\n> 来源：${m.source}`).join("\n\n")
+  return {
+    intent: "knowledge",
+    summary: matches[0].answer,
+    steps: [
+      step(1, "识别需求", "识别为知识问答任务"),
+      step(2, "检索知识库", `命中 ${matches.length} 条相关知识`),
+      step(3, "整理答案", "标注文件来源"),
+    ],
+    resultType: "report",
+    data: { generatedReport: report },
+    suggestedNextActions: ["继续提问", "查询贷款政策", "了解合规要求"],
   }
 }
 

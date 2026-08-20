@@ -8,6 +8,7 @@ export type Intent =
   | "query_database"
   | "export_data"
   | "code_analysis"
+  | "knowledge"
   | "unknown"
 
 export type AgentStepStatus = "pending" | "running" | "done" | "error"
