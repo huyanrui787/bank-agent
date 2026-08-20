@@ -61,6 +61,36 @@ pnpm dev          # 默认 http://localhost:3000
 PORT=3015 pnpm dev # 自定义端口
 ```
 
+## 生产部署（长期运行）
+
+长期运行请用**生产模式**（`next build` + `next start`），不要长期挂 `next dev`。需同时管理两个进程：Next.js + Python codeact sidecar。
+
+```bash
+npm i -g pm2           # 安装 pm2（一次性）
+pnpm build             # 构建生产版
+
+# 用 pm2 启动两个进程
+pm2 start "PORT=3015 pnpm start" --name bank-agent
+pm2 start ".venv/bin/python codeact_server.py" --name codeact-sidecar
+
+# 保存进程列表 + 开机自启
+pm2 save
+pm2 startup            # 按输出提示执行（macOS→launchd，Linux→systemd）
+```
+
+生产模式服务地址：`http://localhost:3015`。
+
+常用管理命令：
+
+```bash
+pm2 status              # 看状态
+pm2 logs                # 看日志（pm2 logs bank-agent 看单进程）
+pm2 restart all         # 重启全部
+pm2 stop all            # 停止
+```
+
+> macOS 无 systemd，开机自启用 launchd（本机已配置 `~/Library/LaunchAgents/pm2.ziggy.plist`，登录后自动 `pm2 resurrect` 恢复进程）。
+
 ## 关键目录
 
 ```
