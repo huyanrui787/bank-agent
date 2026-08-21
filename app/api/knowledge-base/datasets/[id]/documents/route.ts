@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { userFromHeaders } from "@/lib/auth/scope"
 import { can } from "@/lib/auth/permissions"
 import { writeAuditLog } from "@/lib/audit/log"
-import { listDocuments, uploadDocument } from "@/lib/ragflow/client"
+import { listDocuments, uploadDocuments } from "@/lib/ragflow/client"
 import { ragflowErrorResponse } from "../../../_shared"
 
 export const runtime = "nodejs"
@@ -22,7 +22,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   }
 }
 
-// POST /api/knowledge-base/datasets/[id]/documents — 上传文档（multipart: file）
+// POST /api/knowledge-base/datasets/[id]/documents — 上传文档（multipart: 多 file）
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const user = userFromHeaders(req.headers)
@@ -30,13 +30,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (!can(user.role, "manage_knowledge")) return NextResponse.json({ error: "Forbidden" }, { status: 403 })
 
   const formData = await req.formData().catch(() => null)
-  const file = formData?.get("file")
-  if (!file || !(file instanceof File)) {
+  const files = (formData?.getAll("file") ?? []).filter((f): f is File => f instanceof File)
+  if (files.length === 0) {
     return NextResponse.json({ error: "请选择要上传的文件" }, { status: 400 })
   }
 
   try {
-    await uploadDocument(id, file)
+    await uploadDocuments(id, files)
     writeAuditLog({
       actorId: user.sub,
       actorName: user.name,
@@ -45,8 +45,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       action: "admin.knowledge.upload",
       resourceType: "knowledge_document",
       resourceId: id,
-      summary: `${user.name} 向知识库 ${id} 上传文档「${file.name}」`,
-      detail: { fileName: file.name, size: file.size },
+      summary: `${user.name} 向知识库 ${id} 上传 ${files.length} 个文档`,
+      detail: { fileNames: files.map((f) => f.name), count: files.length },
       ipAddress: req.headers.get("x-forwarded-for") ?? null,
       requestId: req.headers.get("x-request-id") ?? null,
       dataScope: null,
