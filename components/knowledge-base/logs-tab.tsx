@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, useCallback } from "react"
-import { Loader2, RefreshCw, CheckCircle, XCircle, PlayCircle, Eye } from "lucide-react"
+import { Loader2, RefreshCw, Eye } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -54,27 +54,30 @@ export function LogsTab({ datasetId }: { datasetId: string }) {
   return (
     <div className="space-y-4">
       {summary && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-          <Card><CardContent className="p-3 text-center">
-            <div className="text-xl font-semibold">{summary.docNum}</div>
-            <div className="text-xs text-muted-foreground">文档</div>
-          </CardContent></Card>
-          <Card><CardContent className="p-3 text-center">
-            <div className="text-xl font-semibold">{summary.chunkNum}</div>
-            <div className="text-xs text-muted-foreground">分块</div>
-          </CardContent></Card>
-          <Card><CardContent className="p-3 text-center">
-            <div className="text-xl font-semibold">{summary.tokenNum}</div>
-            <div className="text-xs text-muted-foreground">Token</div>
-          </CardContent></Card>
-          <Card><CardContent className="p-3 text-center">
-            <div className="flex items-center justify-center gap-2 text-sm">
-              <span className="inline-flex items-center gap-1 text-green-600"><CheckCircle className="h-3.5 w-3.5" />{summary.status.done}</span>
-              <span className="inline-flex items-center gap-1 text-blue-600"><PlayCircle className="h-3.5 w-3.5" />{summary.status.running}</span>
-              <span className="inline-flex items-center gap-1 text-red-600"><XCircle className="h-3.5 w-3.5" />{summary.status.fail}</span>
-            </div>
-            <div className="text-xs text-muted-foreground">完成 / 解析中 / 失败</div>
-          </CardContent></Card>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-2xl">
+          <Card>
+            <CardContent className="p-4">
+              <div className="text-sm text-muted-foreground">总文件数</div>
+              <div className="text-3xl font-semibold mt-1">{summary.docNum}</div>
+              <div className="text-xs text-muted-foreground mt-1">{summary.chunkNum} 分块 · {summary.tokenNum} Token</div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4">
+              <div className="text-sm text-muted-foreground">解析数</div>
+              <div className="text-3xl font-semibold mt-1">{summary.status.done + summary.status.running + summary.status.fail}</div>
+              <div className="flex gap-2 mt-2 text-sm">
+                <div className="flex-1 flex items-center justify-between rounded px-2 py-1 bg-green-50">
+                  <span className="text-xs text-muted-foreground">成功</span>
+                  <span className="text-green-700 font-medium">{summary.status.done}</span>
+                </div>
+                <div className="flex-1 flex items-center justify-between rounded px-2 py-1 bg-red-50">
+                  <span className="text-xs text-muted-foreground">失败</span>
+                  <span className="text-red-700 font-medium">{summary.status.fail}</span>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
         </div>
       )}
 
