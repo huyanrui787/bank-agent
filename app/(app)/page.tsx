@@ -26,6 +26,8 @@ export default function DashboardPage() {
   const [mounted, setMounted] = useState(false)
   const [streamingId, setStreamingId] = useState<string | null>(null)
   const [loadedSkillIds, setLoadedSkillIds] = useState<string[]>([])
+  // 内置技能先占位，拉到 /api/skills 后替换为「内置 + 自定义」，避免标签闪空
+  const [skills, setSkills] = useState<{ id: string; name: string }[]>(BUILTIN_SKILLS)
   const abortRef = useRef<AbortController | null>(null)
 
   // ── 数据源 + 选表（NL2SQL：让 AI 自主/手动匹配库表） ───────────────────────
@@ -78,6 +80,19 @@ export default function DashboardPage() {
             .map((ds) => ({ id: ds.id, name: ds.name, type: ds.type })),
         ])
       } catch { /* ignore */ }
+    })()
+  }, [])
+
+  // 拉取技能列表（内置 + 自定义），供已挂载技能标签渲染名称
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch("/api/skills")
+        if (!res.ok) return
+        const d = await res.json()
+        const list = (d.skills ?? []) as { id: string; name: string }[]
+        if (list.length) setSkills(list.map((s) => ({ id: s.id, name: s.name })))
+      } catch { /* 保留内置技能占位 */ }
     })()
   }, [])
 
@@ -244,6 +259,7 @@ export default function DashboardPage() {
           onSend={handleSend}
           loading={loading}
           loadedSkillIds={loadedSkillIds}
+          skills={skills}
           onUnloadSkill={handleUnloadSkill}
         />
       </div>

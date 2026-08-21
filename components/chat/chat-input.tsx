@@ -5,7 +5,6 @@ import { Send, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
-import { BUILTIN_SKILLS } from "@/lib/agent/skill-store"
 
 const dataPrompts = [
   "梳理 高新区·锦园 中日均存款大于 10 万元的客户清单",
@@ -22,10 +21,12 @@ type Props = {
   onSend: (text: string) => void
   loading?: boolean
   loadedSkillIds?: string[]
+  /** 内置 + 自定义技能，用于渲染已挂载技能标签 */
+  skills?: { id: string; name: string }[]
   onUnloadSkill?: (id: string) => void
 }
 
-export function ChatInput({ onSend, loading, loadedSkillIds = [], onUnloadSkill }: Props) {
+export function ChatInput({ onSend, loading, loadedSkillIds = [], skills = [], onUnloadSkill }: Props) {
   const [value, setValue] = useState("")
 
   function handleSend(text?: string) {
@@ -43,7 +44,7 @@ export function ChatInput({ onSend, loading, loadedSkillIds = [], onUnloadSkill 
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
           <span className="text-xs text-primary font-medium shrink-0">技能</span>
           {loadedSkillIds.map((id) => {
-            const skill = BUILTIN_SKILLS.find((s) => s.id === id)
+            const skill = skills.find((s) => s.id === id)
             if (!skill) return null
             return (
               <button
