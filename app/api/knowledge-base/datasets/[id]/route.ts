@@ -32,6 +32,7 @@ const updateSchema = z.object({
   permission: z.string().max(16).optional(),
   pagerank: z.number().int().min(0).max(100).optional(),
   pipelineId: z.string().max(64).nullable().optional(),
+  avatar: z.string().max(2_000_000).optional(),
 })
 
 // PUT /api/knowledge-base/datasets/[id] — 更新配置（切片方法 / 解析配置 / 名称 / 描述）
@@ -55,6 +56,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       permission: parsed.data.permission,
       pagerank: parsed.data.pagerank,
       pipelineId: parsed.data.pipelineId,
+      avatar: parsed.data.avatar,
     })
     writeAuditLog({
       actorId: user.sub,

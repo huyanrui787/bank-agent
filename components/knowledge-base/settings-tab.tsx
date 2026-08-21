@@ -1,7 +1,7 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
-import { Loader2, Save, Settings2 } from "lucide-react"
+import { useState, useEffect, useCallback, useRef } from "react"
+import { Loader2, Save, Settings2, BookOpen } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -49,7 +49,7 @@ const LANGUAGES = [
 type Dataset = {
   id: string; name: string; description?: string
   chunkMethod?: string; embeddingModel?: string; parserConfig?: Record<string, unknown>
-  language?: string; permission?: string; pagerank?: number; chunkCount?: number
+  language?: string; permission?: string; pagerank?: number; chunkCount?: number; avatar?: string
 }
 type Model = { modelId: string; name: string; providerName?: string; instanceName?: string }
 type Pipeline = { id: string; title: string; description?: string }
@@ -77,6 +77,8 @@ export function SettingsTab({ datasetId }: { datasetId: string }) {
   const [embeddingModel, setEmbeddingModel] = useState("")
   const [chunkCount, setChunkCount] = useState(0)
   const [models, setModels] = useState<Model[]>([])
+  const [avatar, setAvatar] = useState("")
+  const avatarRef = useRef<HTMLInputElement>(null)
 
   // 数据管道
   const [parseType, setParseType] = useState<"builtin" | "pipeline">("builtin")
@@ -120,6 +122,7 @@ export function SettingsTab({ datasetId }: { datasetId: string }) {
         setPagerank(typeof ds.pagerank === "number" ? ds.pagerank : 0)
         setEmbeddingModel(ds.embeddingModel ?? "")
         setChunkCount(typeof ds.chunkCount === "number" ? ds.chunkCount : 0)
+        setAvatar(ds.avatar ?? "")
         setChunkMethod(ds.chunkMethod ?? "naive")
         setPipelineId((ds.parserConfig as Record<string, unknown>)?.pipeline_id ? String((ds.parserConfig as Record<string, unknown>).pipeline_id) : "")
         const pc = (ds.parserConfig ?? {}) as Record<string, unknown>
@@ -148,6 +151,16 @@ export function SettingsTab({ datasetId }: { datasetId: string }) {
 
   useEffect(() => { fetchDataset() }, [fetchDataset])
 
+  function handleAvatarChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    e.target.value = ""
+    if (!file) return
+    if (file.size > 2_000_000) { toast.error("图片过大，请选择 2MB 以内的图片"); return }
+    const reader = new FileReader()
+    reader.onload = () => setAvatar(String(reader.result ?? ""))
+    reader.readAsDataURL(file)
+  }
+
   async function handleSave() {
     if (!name.trim()) { toast.error("请填写知识库名称"); return }
     setSaving(true)
@@ -174,6 +187,7 @@ export function SettingsTab({ datasetId }: { datasetId: string }) {
           embeddingModel, parserConfig,
           chunkMethod: parseType === "builtin" ? chunkMethod : undefined,
           pipelineId: parseType === "pipeline" ? pipelineId : null,
+          avatar,
         }),
       })
       if (!res.ok) { const d = await res.json().catch(() => ({})); toast.error(d.error ?? "保存失败"); return }
@@ -198,6 +212,22 @@ export function SettingsTab({ datasetId }: { datasetId: string }) {
               <div className="space-y-1.5">
                 <label className="text-sm font-medium">知识库名称 <span className="text-red-500">*</span></label>
                 <Input value={name} onChange={(e) => setName(e.target.value)} disabled={!canManage} maxLength={128} />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">头像</label>
+                <div className="flex items-center gap-3">
+                  <div className="h-12 w-12 rounded-lg bg-muted flex items-center justify-center overflow-hidden shrink-0">
+                    {avatar ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={avatar} alt="头像" className="h-full w-full object-cover" />
+                    ) : (
+                      <BookOpen className="h-6 w-6 text-muted-foreground" />
+                    )}
+                  </div>
+                  <input ref={avatarRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarChange} disabled={!canManage} />
+                  <Button variant="outline" size="sm" onClick={() => avatarRef.current?.click()} disabled={!canManage}>上传</Button>
+                  {avatar && <Button variant="ghost" size="sm" onClick={() => setAvatar("")} disabled={!canManage}>移除</Button>}
+                </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
