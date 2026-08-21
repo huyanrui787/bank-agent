@@ -87,10 +87,15 @@ export type RagflowIngestionSummary = {
 
 export type RagflowIngestionLog = {
   id: string
+  documentId: string
+  documentName: string
+  sourceFrom?: string
+  pipelineTitle: string
+  processBeginAt?: string
+  processDuration?: number
+  taskType: string
   operationStatus: string
-  logType: string
-  createTime?: string
-  message?: string
+  progressMsg?: string
 }
 
 export type RagflowErrorCode = "not_configured" | "unreachable" | "http_error" | "bad_response"
@@ -504,10 +509,15 @@ export async function listIngestionLogs(datasetId: string, page = 1, pageSize = 
     const l = r as Record<string, unknown>
     return {
       id: String(l.id ?? ""),
+      documentId: String(l.document_id ?? ""),
+      documentName: String(l.document_name ?? ""),
+      sourceFrom: l.source_from ? String(l.source_from) : undefined,
+      pipelineTitle: String(l.pipeline_title ?? ""),
+      processBeginAt: l.process_begin_at ? String(l.process_begin_at) : undefined,
+      processDuration: typeof l.process_duration === "number" ? l.process_duration : undefined,
+      taskType: String(l.task_type ?? ""),
       operationStatus: String(l.operation_status ?? ""),
-      logType: String(l.log_type ?? ""),
-      createTime: l.create_time ? String(l.create_time) : undefined,
-      message: l.message ? String(l.message) : undefined,
+      progressMsg: l.progress_msg ? String(l.progress_msg) : undefined,
     }
   })
   return { total: d.total ?? logs.length, logs }
