@@ -205,7 +205,7 @@ export async function createDataset(name: string, description?: string): Promise
 
 export async function updateDataset(
   id: string,
-  patch: { name?: string; description?: string; embeddingModel?: string; chunkMethod?: string; parserConfig?: Record<string, unknown>; language?: string; permission?: string; pagerank?: number },
+  patch: { name?: string; description?: string; embeddingModel?: string; chunkMethod?: string; parserConfig?: Record<string, unknown>; language?: string; permission?: string; pagerank?: number; pipelineId?: string | null },
 ): Promise<void> {
   const body: Record<string, unknown> = {}
   if (patch.name !== undefined) body.name = patch.name
@@ -216,6 +216,7 @@ export async function updateDataset(
   if (patch.language !== undefined) body.language = patch.language
   if (patch.permission !== undefined) body.permission = patch.permission
   if (patch.pagerank !== undefined) body.pagerank = patch.pagerank
+  if (patch.pipelineId !== undefined) body.pipeline_id = patch.pipelineId
   await request(`/api/v1/datasets/${encodeURIComponent(id)}`, { method: "PUT", json: body })
 }
 
@@ -524,4 +525,70 @@ export async function listIngestionLogs(datasetId: string, page = 1, pageSize = 
     }
   })
   return { total: d.total ?? logs.length, logs }
+}
+
+// ── 配置相关（embedding 模型 / 元数据 / 管线）──────────────────────────────────
+
+export type RagflowModel = {
+  modelId: string
+  name: string
+  providerName?: string
+  instanceName?: string
+  modelType: string[]
+}
+
+export type RagflowMetadataField = {
+  key: string
+  type: string // string | list | time | number
+  description?: string
+  enum?: string[]
+}
+
+export type RagflowPipeline = {
+  id: string
+  title: string
+  description?: string
+}
+
+/** 拉取可用模型（data 是数组），过滤 embedding 类型 */
+export async function listModels(): Promise<RagflowModel[]> {
+  const data = await request<unknown[]>("/api/v1/models")
+  return (data ?? [])
+    .map((r) => {
+      const m = r as Record<string, unknown>
+      return {
+        modelId: String(m.model_id ?? ""),
+        name: String(m.name ?? ""),
+        providerName: m.provider_name ? String(m.provider_name) : undefined,
+        instanceName: m.instance_name ? String(m.instance_name) : undefined,
+        modelType: Array.isArray(m.model_type) ? (m.model_type as string[]) : [],
+      }
+    })
+    .filter((m) => m.modelType.includes("embedding"))
+}
+
+/** 数据集自动元数据配置（GET /metadata/config） */
+export async function getMetadataConfig(datasetId: string): Promise<{ metadata: RagflowMetadataField[]; builtInMetadata: RagflowMetadataField[] }> {
+  const d = (await request<Record<string, unknown>>(`/api/v1/datasets/${encodeURIComponent(datasetId)}/metadata/config`)) as Record<string, unknown>
+  return {
+    metadata: (Array.isArray(d.metadata) ? d.metadata : []) as RagflowMetadataField[],
+    builtInMetadata: (Array.isArray(d.built_in_metadata) ? d.built_in_metadata : []) as RagflowMetadataField[],
+  }
+}
+
+/** 更新数据集自动元数据配置（PUT /metadata/config，backend 用 built_in_metadata 蛇形） */
+export async function updateMetadataConfig(datasetId: string, metadata: RagflowMetadataField[], builtInMetadata: RagflowMetadataField[]): Promise<void> {
+  await request(`/api/v1/datasets/${encodeURIComponent(datasetId)}/metadata/config`, {
+    method: "PUT",
+    json: { metadata, built_in_metadata: builtInMetadata },
+  })
+}
+
+/** 内置数据管线列表（Go 后端） */
+export async function listPipelines(): Promise<RagflowPipeline[]> {
+  const d = (await request<{ canvas?: unknown[] }>("/api/v1/pipelines?type=builtin")) as { canvas?: unknown[] }
+  return (d.canvas ?? []).map((r) => {
+    const p = r as Record<string, unknown>
+    return { id: String(p.id ?? ""), title: String(p.title ?? ""), description: p.description ? String(p.description) : undefined }
+  })
 }
