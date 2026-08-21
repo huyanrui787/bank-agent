@@ -38,8 +38,12 @@ export function ChatMessageList({ messages, loading, streamingId, onSendAction }
           </div>
           <div className="text-lg font-medium">AI 工作台</div>
           <p className="text-sm text-muted-foreground">
-            输入业务问题或使用快捷指令，AI 会自动识别意图并调用对应技能。
+            既能查询客户、预警、绩效等经营数据，也能咨询利率、合规、准入、贷前调查等政策知识。
           </p>
+          <div className="flex flex-wrap justify-center gap-2 text-xs text-muted-foreground">
+            <span className="px-2 py-1 rounded-full bg-muted/50">📊 数据查询</span>
+            <span className="px-2 py-1 rounded-full bg-muted/50">📖 政策知识</span>
+          </div>
         </div>
       </div>
     )
