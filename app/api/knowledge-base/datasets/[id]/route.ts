@@ -30,6 +30,7 @@ const updateSchema = z.object({
   parserConfig: z.record(z.string(), z.unknown()).optional(),
   language: z.string().max(32).optional(),
   permission: z.string().max(16).optional(),
+  pagerank: z.number().int().min(0).max(100).optional(),
 })
 
 // PUT /api/knowledge-base/datasets/[id] — 更新配置（切片方法 / 解析配置 / 名称 / 描述）
@@ -51,6 +52,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       parserConfig: parsed.data.parserConfig,
       language: parsed.data.language,
       permission: parsed.data.permission,
+      pagerank: parsed.data.pagerank,
     })
     writeAuditLog({
       actorId: user.sub,

@@ -30,6 +30,7 @@ export type RagflowDataset = {
   embeddingModel?: string
   similarityThreshold?: number
   language?: string
+  pagerank?: number
   parserConfig?: Record<string, unknown>
 }
 
@@ -178,6 +179,7 @@ function mapDataset(d: Record<string, unknown>): RagflowDataset {
     embeddingModel: d.embedding_model ? String(d.embedding_model) : undefined,
     similarityThreshold: typeof d.similarity_threshold === "number" ? d.similarity_threshold : undefined,
     language: d.language ? String(d.language) : undefined,
+    pagerank: typeof d.pagerank === "number" ? d.pagerank : undefined,
     parserConfig: (d.parser_config as Record<string, unknown>) ?? undefined,
   }
 }
@@ -203,7 +205,7 @@ export async function createDataset(name: string, description?: string): Promise
 
 export async function updateDataset(
   id: string,
-  patch: { name?: string; description?: string; embeddingModel?: string; chunkMethod?: string; parserConfig?: Record<string, unknown>; language?: string; permission?: string },
+  patch: { name?: string; description?: string; embeddingModel?: string; chunkMethod?: string; parserConfig?: Record<string, unknown>; language?: string; permission?: string; pagerank?: number },
 ): Promise<void> {
   const body: Record<string, unknown> = {}
   if (patch.name !== undefined) body.name = patch.name
@@ -213,6 +215,7 @@ export async function updateDataset(
   if (patch.parserConfig !== undefined) body.parser_config = patch.parserConfig
   if (patch.language !== undefined) body.language = patch.language
   if (patch.permission !== undefined) body.permission = patch.permission
+  if (patch.pagerank !== undefined) body.pagerank = patch.pagerank
   await request(`/api/v1/datasets/${encodeURIComponent(id)}`, { method: "PUT", json: body })
 }
 
