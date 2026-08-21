@@ -15,6 +15,7 @@ import {
   Database,
   GitBranch,
   ShieldCheck,
+  BookOpen,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useUser } from "@/lib/hooks/use-user"
@@ -45,6 +46,9 @@ export function AppSidebar() {
       : []),
     ...(user?.permissions?.includes("manage_datasources")
       ? [{ href: "/datasources", label: "数据源", icon: Database }]
+      : []),
+    ...(user?.permissions?.includes("manage_knowledge")
+      ? [{ href: "/knowledge-base", label: "知识库", icon: BookOpen }]
       : []),
     { href: "/tasks", label: "定时任务", icon: Bell, badge: todayCount },
     ...(user?.permissions?.includes("view_audit")

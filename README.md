@@ -17,10 +17,11 @@
 
 - 编排工作流：React Flow 可视化编辑器，7 类节点（start / end / llm / tool / codeact / condition / skill）+ 7 套预置工作流，SSE 流式执行
 - 数据源管理：15 种数据源在线配置与连通性测试，密码 AES-256-GCM 加密落库
+- 知识库：文档上传 / 解析状态 / 删除，背后调 RAGFlow 检索引擎（独立部署），AI 工作台语义检索并标注文件来源
 - 渠道配置：企业微信机器人 / 龙龙 / 短信 / 自定义 Webhook 四类通知渠道
 - 定时任务：周期规则调度，到点经渠道推送提醒（由 `instrumentation.ts` 内 30s 心跳驱动）
 - 审计日志：哈希链防篡改审计流水 + 完整性校验
-- 权限配置：5 内置角色 × 12 权限动作的 RBAC 管理与账号管理
+- 权限配置：5 内置角色 × 13 权限动作的 RBAC 管理与账号管理
 - Excel / CSV 导出：`/api/export?type={customers|managers|alerts}&format={xlsx|csv}`，xlsx 走 ExcelJS，带表头样式 / 冻结首行 / 自动筛选 / 列宽 / 斑马纹
 - 多数据源接入：SQLite / MySQL / PostgreSQL / SQL Server / Oracle / DB2 / Hive / Impala / Elasticsearch / DTSQL / 向量库（pgvector·Milvus·Qdrant·Weaviate·Chroma），经 Python codeact sidecar 跨库执行查询与向量检索，详见 [docs/数据源.md](docs/数据源.md)
 
@@ -48,6 +49,7 @@
 - TanStack Table v8、Recharts、React Flow（@xyflow/react）、sonner、lucide-react、zod
 - better-sqlite3 本地库 + jose（JWT）+ bcryptjs + ExcelJS
 - Python FastAPI sidecar（codeact 沙箱）承载跨库查询与 Python 代码执行
+- **RAGFlow**（独立部署的检索引擎）承载文档解析 / 向量化 / 语义检索，经 HTTP API 接入（详见 [docs/数据源.md](docs/数据源.md) 同级的 RAGFlow 集成说明）
 - **Agent 双轨**：默认走真实 LLM（OpenAI 兼容 Chat Completions API，已对接 `qwen/qwen-plus`·阿里云百炼 DashScope），失败/未配置 key 时自动 fallback 到 deterministic mock，保证现场演示稳定
 
 ## 运行架构
@@ -57,15 +59,16 @@
 │  Next.js 16 (:3015)          │HTTP │  Python sidecar (:8765)    │
 │  UI + API Routes + Agent 主循环├────►│  FastAPI + codeact 沙箱     │
 │                              │     │  /exec /schema             │
-└───────────┬──────────────────┘     │  /datasource/test          │
-            │ better-sqlite3         └────────────┬───────────────┘
-            ▼                                     │ SQLAlchemy / 向量客户端
-   data/bank.db（主库）                            ▼
-   data/enterprise.db · settlement.db      外部库：MySQL / PG / ES /
-   data/guarantee.db（演示外部库）           Oracle / 向量库 ...
+└───┬───────────────┬──────────┘     │  /datasource/test          │
+    │ better-sqlite3 │ HTTP           └────────────┬───────────────┘
+    ▼               ▼                            │ SQLAlchemy / 向量客户端
+ data/bank.db    RAGFlow (:9380)                  ▼
+ data/enterprise.db 知识检索引擎              外部库：MySQL / PG / ES /
+ data/settlement.db（文档解析/向量化/检索）     Oracle / 向量库 ...
+ data/guarantee.db
 ```
 
-两个进程都需常驻（见「生产部署」）。主库 `data/bank.db` 由 `lib/db/index.ts` 首次访问时自动建表并从 `lib/mock/` 播种，无需手动初始化。
+Next.js 与 Python sidecar 两个进程需常驻（见「生产部署」）；RAGFlow 为独立部署的检索引擎，未配置时知识检索返回「知识库未接入」。主库 `data/bank.db` 由 `lib/db/index.ts` 首次访问时自动建表并从 `lib/mock/` 播种，无需手动初始化。
 
 ## Agent 工作流
 
@@ -77,7 +80,8 @@
 streamLlmAgent → qwen-plus (Chat Completions API)
     ↓ tool_call（最多 4 轮）
 本地工具（filterCustomers / scanAlerts / analyzeCustomer / ...）
-  └─ codeActAnalysis → Python sidecar → 跨库 SQL / 向量检索 / 出图
+  ├─ codeActAnalysis → Python sidecar → 跨库 SQL / 向量检索 / 出图
+  └─ searchKnowledge → RAGFlow HTTP API → 语义检索 + 文档来源
     ↑ JSON result
 继续 LLM → 最终中文总结 + 结构化数据
     ↓
@@ -100,7 +104,7 @@ streamLlmAgent → qwen-plus (Chat Completions API)
 演示系统里合规相关的实现是完整的，不是壳子：
 
 - **认证**：JWT 双令牌（access 15min / refresh 7d，httpOnly Cookie），refresh 轮换并吊销旧令牌；`middleware.ts` 统一校验并向下游注入 `x-user-*` 身份头。
-- **RBAC**：12 个权限动作 × 5 个内置角色，权限点集中定义在 [lib/rbac/catalog.ts](lib/rbac/catalog.ts)，API 与侧边栏共用同一套 `can()` 判定。
+- **RBAC**：13 个权限动作 × 5 个内置角色，权限点集中定义在 [lib/rbac/catalog.ts](lib/rbac/catalog.ts)，API 与侧边栏共用同一套 `can()` 判定。
 - **数据范围隔离**：`personal / branch / bank` 三级 scope 翻译成 SQL WHERE。TypeScript 侧由 `SqliteConnector` 拼接，Python 沙箱侧另包一层 `query()` 强制注入同样的条件——两条执行路径都不能绕过。
 - **数据分级与脱敏**：字段按 L1/L2/L3 分级（[lib/auth/data-classification.ts](lib/auth/data-classification.ts)），`maskPii` 角色自动脱敏；`redactForLlm` 确保 PII 不进模型上下文。
 - **审计**：哈希链式审计日志（[lib/audit/log.ts](lib/audit/log.ts)），`verifyChainIntegrity` 可校验是否被篡改，`/audit` 页面仅分行管理员与合规审计可见。
@@ -119,6 +123,29 @@ USE_MOCK_AGENT=false      # true 时强制本地 mock，无需网络
 ```
 
 未配置 key 时自动降级到本地 mock；运行时调用失败也会 fallback 并在工作台 Timeline 顶部弹出错误条。
+
+## 配置 RAGFlow 知识检索
+
+知识库检索（`searchKnowledge` 工具）依赖 RAGFlow 独立服务，未配置时检索返回「知识库未接入」。在 `.env.local` 追加：
+
+```env
+RAGFLOW_BASE_URL=http://127.0.0.1:9380   # RAGFlow 服务地址
+RAGFLOW_API_KEY=ragflow-...              # RAGFlow「API」页生成的 Key
+# 可选：召回条数 / 相似度阈值 / 超时（默认 3 / 0.2 / 10000ms）
+# RAGFLOW_TOP_K=3
+# RAGFLOW_SIMILARITY_THRESHOLD=0.2
+# RAGFLOW_TIMEOUT_MS=10000
+```
+
+拉起 RAGFlow（独立部署，官方 docker compose）：
+
+```bash
+git clone https://github.com/infiniflow/ragflow && cd ragflow/docker
+# Linux 需先：sysctl -w vm.max_map_count=262144
+docker compose up -d          # Web UI 默认 http://localhost:9380
+```
+
+在 RAGFlow Web UI 建知识库并上传政策/合规文档，解析完成后，登录 bank-agent（`admin`）在 `/knowledge-base` 页即可看到并管理文档，工作台问「小微企业贷款最高额度是多少？」即走语义检索并标注文件来源。
 
 ## 启动
 

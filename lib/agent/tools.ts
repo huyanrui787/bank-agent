@@ -16,7 +16,7 @@ import { redactForLlm } from "@/lib/auth/desensitize"
 import { decryptSecret } from "@/lib/security/encrypt"
 import { buildSchemaPrompt } from "@/lib/db/schema-info"
 import { writeAuditLog } from "@/lib/audit/log"
-import { searchKnowledge as searchKnowledgeBase } from "@/lib/mock/knowledge-base"
+import { searchKnowledge as searchKnowledgeRagflow, RagflowError } from "@/lib/ragflow/client"
 import type { ToolDef } from "@/lib/agent/llm"
 import type { AgentResultType } from "@/lib/agent/types"
 import type { AgentCtx } from "@/lib/agent/llm-agent"
@@ -187,7 +187,7 @@ export const toolDefs: ToolDef[] = [
     type: "function",
     name: "searchKnowledge",
     description:
-      "检索行内知识库（贷款政策/利率/合规要求/贷前调查/产品准入），回答客户经理的知识性问题并标注文件来源。",
+      "检索行内知识库（政策制度、合规要求、利率、贷前调查、产品准入、项目文档、业务资料等），回答用户的知识性问题并标注文件来源。",
     parameters: {
       type: "object",
       additionalProperties: false,
@@ -467,16 +467,36 @@ export const toolHandlers: Record<string, ToolHandler> = {
     }
   },
 
-  searchKnowledge(args) {
+  async searchKnowledge(args) {
     const q = String(args.query ?? "").trim()
-    const matches = searchKnowledgeBase(q)
-    if (matches.length === 0) {
+    if (!q) return { textForModel: "请提供要检索的问题或关键词。", ui: null }
+
+    // v1：政策知识全行共享、无客户 PII，不做 scope 过滤。未来加「支行专属 SOP」时经 searchKnowledgeRagflow 的 datasetIds 选项按 scope 拼数据集。
+    let hits
+    try {
+      hits = await searchKnowledgeRagflow(q)
+    } catch (err) {
+      if (err instanceof RagflowError && err.code === "not_configured") {
+        return {
+          textForModel: "知识库未接入：RAGFlow 检索服务未配置（缺少 RAGFLOW_BASE_URL / RAGFLOW_API_KEY）。请联系管理员配置后重试。",
+          ui: null,
+        }
+      }
+      return {
+        textForModel: `知识库未接入：RAGFlow 检索服务暂不可用（${err instanceof Error ? err.message : String(err)}）。`,
+        ui: null,
+      }
+    }
+
+    if (hits.length === 0) {
       return { textForModel: `知识库中未找到与「${q}」相关的内容。`, ui: null }
     }
-    const evidence = matches.map((m) => `${m.category}｜${m.question}\n${m.answer}\n来源：${m.source}`).join("\n\n")
-    const sourcesMd = matches.map((m) => `- ${m.source}`).join("\n")
+    const evidence = hits
+      .map((h) => `${h.content}${h.page != null ? `\n（第 ${h.page} 页）` : ""}\n来源：${h.source}`)
+      .join("\n\n")
+    const sourcesMd = [...new Set(hits.map((h) => h.source))].join("\n")
     return {
-      textForModel: `知识库检索到 ${matches.length} 条相关内容：\n\n${evidence}\n\n请基于以上内容直接、准确地回答用户，并标注文件来源。`,
+      textForModel: `知识库检索到 ${hits.length} 条相关内容：\n\n${evidence}\n\n请基于以上内容直接、准确地回答用户，并标注文件来源。`,
       ui: { resultType: "report" as const, data: { generatedReport: `## 文件来源\n\n${sourcesMd}` } },
     }
   },
@@ -572,7 +592,7 @@ const BASE_INSTRUCTIONS = `你是「丰年银行 AI 客户经营助手」的内�
 3. 调用工具时，参数必须来自用户原话；不要凭空创造客户姓名、金额、风险等级、客户经理姓名。
 4. 工具返回 JSON 后，请用中文给出 2~3 句**简洁的业务结论**（不要复述参数，不要罗列字段）。
 5. 始终保持银行合规口吻：不输出未脱敏的真实身份证号/手机号；不臆造监管政策。
-6. 如果用户请求是闲聊或与银行业务无关的通用知识，直接用中文简要回答；但涉及贷款政策、利率、合规要求、贷前调查、产品准入等知识性问题时，必须调用 searchKnowledge 检索知识库并标注文件来源，禁止凭模型通用知识作答或臆造政策条款。
+6. 如果用户请求是闲聊或与银行业务无关的通用知识，直接用中文简要回答；但涉及行内知识库可解答的内容（政策制度、利率、合规要求、贷前调查、产品准入、项目文档、业务资料等）时，必须调用 searchKnowledge 检索知识库并标注文件来源，禁止凭模型通用知识作答或臆造政策条款。
 7. 用户首次提问、或问「你能做什么/你会什么」时，简要说明：既能查询客户、预警、绩效等经营数据，也能回答利率、合规、准入、贷前调查等政策知识。
 
 可用工具：
@@ -583,7 +603,7 @@ const BASE_INSTRUCTIONS = `你是「丰年银行 AI 客户经营助手」的内�
 - generateInvestigationReport：贷前调查报告（必传 query=客户姓名/编号）
 - generateScript：个性化话术生成（必传 query=客户姓名/编号，可选 scene=营销/催收/续存/转介绍）
 - queryDatabase：自动选表查询（可选 table=customers/managers/alerts/products/visits）
-- searchKnowledge：行内知识库检索（贷款政策/利率/合规/贷前调查/产品准入），回答知识性问题并标注来源
+- searchKnowledge：行内知识库检索（政策/合规/制度/项目文档/业务资料），回答知识性问题并标注来源
 - exportData：CSV 导出（必传 type ∈ {customers, managers, alerts}）
 - codeActAnalysis：**图表生成 / 衍生指标计算 / 跨表聚合**（必传 code=完整 Python，用 query()/emit_chart()，**沙箱只有标准库、禁止 import pandas/numpy**）。**有图表或复合指标需求时优先用此工具；普通筛选/预警/画像用上面专用工具。**
 

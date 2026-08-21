@@ -12,6 +12,7 @@ export type AuditAction =
   | "admin.user.create" | "admin.user.update" | "admin.user.delete"
   | "admin.role.create" | "admin.role.update" | "admin.role.delete"
   | "admin.datasource.create" | "admin.datasource.update" | "admin.datasource.delete"
+  | "admin.knowledge.create" | "admin.knowledge.delete" | "admin.knowledge.upload"
 
 export type AuditEntry = {
   actorId: string

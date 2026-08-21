@@ -16,6 +16,7 @@ export const ACTIONS = {
   manage_channels:          { label: "渠道配置",       group: "系统管理" },
   manage_workflows:         { label: "工作流编排",     group: "系统管理" },
   manage_skills:            { label: "技能配置",       group: "系统管理" },
+  manage_knowledge:         { label: "知识库管理",     group: "系统管理" },
 } as const
 
 export type Action = keyof typeof ACTIONS
@@ -44,7 +45,7 @@ const MANAGER_ACTIONS: Action[] = [
 export const BUILTIN_PERMISSIONS: Record<string, Action[]> = {
   manager: MANAGER_ACTIONS,
   sub_branch_head: MANAGER_ACTIONS,
-  branch_admin: [...MANAGER_ACTIONS, "view_audit", "manage_users", "manage_datasources", "manage_channels", "manage_workflows", "manage_skills"],
+  branch_admin: [...MANAGER_ACTIONS, "view_audit", "manage_users", "manage_datasources", "manage_channels", "manage_workflows", "manage_skills", "manage_knowledge"],
   compliance: ["view_customer", "view_alert", "view_manager_performance", "view_audit", "ai_chat"],
   readonly: ["view_customer", "view_alert", "view_manager_performance", "ai_chat"],
 }

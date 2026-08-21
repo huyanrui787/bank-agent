@@ -7,6 +7,7 @@
 
 import { callLlm, streamLlmText, isLlmConfigured, type ResponsesInputItem } from "./llm"
 import { buildSystemPrompt, toolDefs, toolHandlers } from "./tools"
+import { detectIntent } from "./intent-router"
 import type { AgentResponse, AgentStep, AgentResultType, Intent, StreamEvent } from "./types"
 import type { AccessTokenPayload } from "@/lib/auth/jwt"
 import type { DataScope } from "@/lib/auth/scope"
@@ -35,6 +36,7 @@ const intentByTool: Record<string, Intent> = {
   queryDatabase: "query_database",
   exportData: "export_data",
   codeActAnalysis: "code_analysis",
+  searchKnowledge: "knowledge",
 }
 
 export { isLlmConfigured }
@@ -67,6 +69,32 @@ export async function* streamLlmAgent(
   let resultData: unknown = null
   let intent: Intent = "unknown"
   const suggestedNextActions: string[] = []
+
+  // 前置知识检索：qwen 系列对「知识问答/未知」类问题 tool_call 触发不稳，这里对非数据操作意图先检索 RAGFlow，
+  // 命中则把结果注入 input，让 LLM 直接基于结果作答（无需再触发 tool_call）。
+  const preIntent = detectIntent(message)
+  const dataIntents: Intent[] = [
+    "customer_segment", "vertical_management", "business_alert", "generate_report",
+    "generate_script", "query_database", "customer_analysis", "code_analysis", "export_data",
+  ]
+  if (!dataIntents.includes(preIntent)) {
+    try {
+      const preResult = await Promise.resolve(toolHandlers.searchKnowledge({ query: message }, ctx))
+      if (preResult.textForModel?.includes("知识库检索到")) {
+        yield* pushStep("调用工具", "searchKnowledge（知识检索）", "done")
+        input.push({ type: "function_call", call_id: "pre_knowledge", name: "searchKnowledge", arguments: JSON.stringify({ query: message }) })
+        input.push({ type: "function_call_output", call_id: "pre_knowledge", output: JSON.stringify({ ok: true, summary: preResult.textForModel }) })
+        if (preResult.ui) {
+          resultType = preResult.ui.resultType
+          resultData = preResult.ui.data
+        }
+        intent = "knowledge"
+        yield* pushStep("工具结果", truncate(preResult.textForModel, 160))
+      }
+    } catch {
+      // 前置检索失败（如 RAGFlow 未接入），走正常 tool_call 流程
+    }
+  }
 
   for (let turn = 0; turn < MAX_TOOL_TURNS; turn++) {
     const llm = await callLlm({
@@ -175,6 +203,8 @@ export async function* streamLlmAgent(
     suggestedNextActions.push("下载文件")
   } else if (intent === "code_analysis") {
     suggestedNextActions.push("继续深入分析", "导出图表数据", "生成调查报告")
+  } else if (intent === "knowledge") {
+    suggestedNextActions.push("继续提问", "查询贷款政策", "了解合规要求")
   } else {
     suggestedNextActions.push(
       "梳理高日均存款客户",

@@ -151,6 +151,58 @@ Chat2DB 后端独立部署，承载多库连接、元数据、SQL 执行、结�
 
 ---
 
+## 6.5 RAGFlow 集成方案（知识检索引擎）
+
+与 Chat2DB 同构：RAGFlow 作为**独立检索服务、独立部署**，我方 bank-agent 只通过 HTTP API 调用，**不 fork 源码**。
+
+### 6.5.1 决策
+
+| 决策点 | 结论 |
+| --- | --- |
+| 检索引擎 | RAGFlow（DeepDoc 文档解析 / OCR / 版面分析 / 向量化 / 检索） |
+| 接入方式 | 直接 HTTP API（`POST /api/v1/retrieval` 等），Bearer 鉴权，不走社区第三方 MCP |
+| 融合方式 | **API 融合 + 自有前端页**：bank-agent 用自己的 Next.js 页做知识库管理（`/knowledge-base`），背后调 RAGFlow API；不 fork RAGFlow 源码 |
+| 范围 | 检索接入（`searchKnowledge` 工具）+ 知识库管理前端页 + API 代理层 |
+| 未配置时 | 硬依赖：真实 LLM 路径的 `searchKnowledge` 返回「知识库未接入」，不做硬编码降级；mock 路径（`USE_MOCK_AGENT`）保留本地 15 条演示兜底 |
+| scope 过滤 | v1 不做：政策/合规知识全行共享、无客户 PII；扩展点已预埋（`searchKnowledge` 的 `datasetIds` 选项） |
+
+### 6.5.2 拓扑
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  我方 bank-agent（Next.js 前端 + LangGraph agent + codeact）   │
+│  业务域：客户经营 / 预警 / 画像 / 权限 / 审计（自建，护城河）       │
+│  + 知识库管理前端页（/knowledge-base，调 RAGFlow API）           │
+└──────────────┬──────────────────────────────────────────────┘
+               │  HTTP（Bearer API Key）
+               ▼
+┌─────────────────────────────────────────────────────────────┐
+│  RAGFlow（独立「知识检索引擎」服务，独立部署）                    │
+│  文档解析（DeepDoc/OCR）/ 分块 / 向量化 / 语义检索 / 知识库管理    │
+└──────────────┬──────────────────────────────────────────────┘
+               │
+               ▼
+        MySQL + Elasticsearch + Redis + MinIO（RAGFlow 依赖服务）
+```
+
+- 我方保留：业务域 + 合规 + 数据隔离 + 审计 + agent 编排 + 知识库前端页。
+- RAGFlow 承担：文档解析、向量化、检索（复用其 DeepDoc 复杂文档解析能力，不自研）。
+- 优点：解耦、可独立扩容、许可证边界干净（Apache 2.0 独立部署，非白标/OEM）。
+
+### 6.5.3 为什么不 fork 源码
+
+RAGFlow 是 Python Flask 后端 + React(UmiJS/Ant Design) 前端 + DeepDoc 解析引擎，规模远超 bank-agent，且硬依赖 MySQL/ES/Redis/MinIO。fork 融合代码**不消除任何部署复杂度**（依赖服务照跑），反而背上几十万行维护包袱。正确姿势是「融合在 API 层和体验层」——复用后端能力，自有前端页达成「一个产品」体验。
+
+### 6.5.4 改动清单（已落地）
+
+- `lib/ragflow/client.ts`：RAGFlow HTTP 客户端（检索 + 数据集/文档管理）
+- `app/api/knowledge-base/*`：API 代理（鉴权 + RBAC `manage_knowledge` + 审计）
+- `app/(app)/knowledge-base/page.tsx`：知识库管理前端页
+- `lib/agent/tools.ts`：`searchKnowledge` 工具改为调 RAGFlow
+- `lib/rbac/catalog.ts`：新增 `manage_knowledge` 权限（`branch_admin`）
+
+---
+
 ## 7. 目标架构
 
 ```
