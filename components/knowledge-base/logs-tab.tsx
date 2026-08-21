@@ -1,15 +1,26 @@
 "use client"
 
 import { useState, useEffect, useCallback } from "react"
-import { Loader2, RefreshCw, CheckCircle, XCircle, Clock, PlayCircle } from "lucide-react"
+import { Loader2, RefreshCw, CheckCircle, XCircle, PlayCircle, Eye } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { cn } from "@/lib/utils"
 
 type Summary = {
   docNum: number; chunkNum: number; tokenNum: number
   status: { unstart: number; running: number; cancel: number; done: number; fail: number }
 }
 type LogItem = { id: string; operationStatus: string; logType: string; createTime?: string; message?: string }
+
+const STATUS_BADGE: Record<string, string> = {
+  done: "bg-green-100 text-green-700", fail: "bg-red-100 text-red-700",
+  running: "bg-blue-100 text-blue-700", unstart: "bg-gray-100 text-gray-600", cancel: "bg-gray-100 text-gray-500",
+}
+const STATUS_LABEL: Record<string, string> = {
+  done: "完成", fail: "失败", running: "解析中", unstart: "待解析", cancel: "已取消",
+}
 
 function fmtTime(t?: string) {
   if (!t) return ""
@@ -18,26 +29,27 @@ function fmtTime(t?: string) {
 }
 
 export function LogsTab({ datasetId }: { datasetId: string }) {
+  const [logType, setLogType] = useState<"file" | "dataset">("file")
+  const [statusFilter, setStatusFilter] = useState("all")
   const [summary, setSummary] = useState<Summary | null>(null)
   const [logs, setLogs] = useState<LogItem[]>([])
   const [fetching, setFetching] = useState(true)
+  const [detail, setDetail] = useState<LogItem | null>(null)
 
   const fetchLogs = useCallback(async () => {
     try {
       const [sRes, lRes] = await Promise.all([
         fetch(`/api/knowledge-base/datasets/${datasetId}/ingestions/summary`),
-        fetch(`/api/knowledge-base/datasets/${datasetId}/ingestions?page=1&page_size=20`),
+        fetch(`/api/knowledge-base/datasets/${datasetId}/ingestions?page=1&page_size=100&log_type=${logType}`),
       ])
       if (sRes.ok) { const d = await sRes.json(); setSummary(d.summary ?? null) }
       if (lRes.ok) { const d = await lRes.json(); setLogs(d.logs ?? []) }
     } finally { setFetching(false) }
-  }, [datasetId])
+  }, [datasetId, logType])
 
   useEffect(() => { fetchLogs() }, [fetchLogs])
 
-  if (fetching) {
-    return <div className="flex items-center gap-2 text-xs text-muted-foreground py-6"><Loader2 className="h-4 w-4 animate-spin" /> 加载日志…</div>
-  }
+  const filtered = statusFilter === "all" ? logs : logs.filter((l) => l.operationStatus === statusFilter)
 
   return (
     <div className="space-y-4">
@@ -66,31 +78,65 @@ export function LogsTab({ datasetId }: { datasetId: string }) {
         </div>
       )}
 
-      <div className="flex items-center justify-between">
-        <span className="text-sm font-medium">解析日志</span>
-        <Button variant="ghost" size="sm" onClick={fetchLogs}>
-          <RefreshCw className="h-4 w-4" />
+      <div className="flex items-center gap-2">
+        <div className="flex rounded-md border border-border overflow-hidden">
+          <button
+            onClick={() => setLogType("file")}
+            className={cn("px-3 py-1.5 text-xs", logType === "file" ? "bg-primary text-primary-foreground" : "hover:bg-accent")}
+          >文件日志</button>
+          <button
+            onClick={() => setLogType("dataset")}
+            className={cn("px-3 py-1.5 text-xs", logType === "dataset" ? "bg-primary text-primary-foreground" : "hover:bg-accent")}
+          >知识库日志</button>
+        </div>
+        <Select value={statusFilter} onValueChange={setStatusFilter}>
+          <SelectTrigger className="w-28"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">全部状态</SelectItem>
+            <SelectItem value="done">完成</SelectItem>
+            <SelectItem value="fail">失败</SelectItem>
+            <SelectItem value="running">解析中</SelectItem>
+          </SelectContent>
+        </Select>
+        <Button variant="ghost" size="sm" onClick={fetchLogs} className="ml-auto">
+          <RefreshCw className={`h-4 w-4 ${fetching ? "animate-spin" : ""}`} />
         </Button>
       </div>
 
-      {logs.length === 0 ? (
+      {fetching ? (
+        <div className="flex items-center gap-2 text-xs text-muted-foreground py-6"><Loader2 className="h-4 w-4 animate-spin" /> 加载日志…</div>
+      ) : filtered.length === 0 ? (
         <p className="text-xs text-muted-foreground py-6">暂无解析日志</p>
       ) : (
         <div className="space-y-1.5">
-          {logs.map((log) => (
+          {filtered.map((log) => (
             <div key={log.id} className="flex items-center gap-3 rounded-md border border-border p-2.5">
-              <Clock className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-xs">{log.message || log.operationStatus || "—"}</span>
-                  {log.logType && <span className="text-[10px] text-muted-foreground">{log.logType}</span>}
-                </div>
-                {log.createTime && <p className="text-[10px] text-muted-foreground mt-0.5">{fmtTime(log.createTime)}</p>}
-              </div>
+              <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${STATUS_BADGE[log.operationStatus] ?? "bg-gray-100 text-gray-600"}`}>
+                {STATUS_LABEL[log.operationStatus] ?? log.operationStatus}
+              </span>
+              <span className="flex-1 min-w-0 text-xs truncate">{log.message || log.operationStatus || "—"}</span>
+              {log.createTime && <span className="text-[10px] text-muted-foreground shrink-0">{fmtTime(log.createTime)}</span>}
+              <button onClick={() => setDetail(log)} className="h-7 w-7 inline-flex items-center justify-center rounded hover:bg-accent text-muted-foreground shrink-0" title="查看详情"><Eye className="h-3.5 w-3.5" /></button>
             </div>
           ))}
         </div>
       )}
+
+      <Dialog open={!!detail} onOpenChange={(v) => { if (!v) setDetail(null) }}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader><DialogTitle>日志详情</DialogTitle></DialogHeader>
+          <div className="space-y-2 text-sm">
+            {detail?.message && (
+              <pre className="text-xs whitespace-pre-wrap bg-muted/50 rounded p-3 max-h-80 overflow-y-auto">{detail.message}</pre>
+            )}
+            <div className="flex items-center gap-4 text-xs text-muted-foreground">
+              {detail?.operationStatus && <span>状态：{STATUS_LABEL[detail.operationStatus] ?? detail.operationStatus}</span>}
+              {detail?.createTime && <span>时间：{fmtTime(detail.createTime)}</span>}
+              {detail?.logType && <span>类型：{detail.logType === "file" ? "文件日志" : "知识库日志"}</span>}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

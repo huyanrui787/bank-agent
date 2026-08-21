@@ -16,9 +16,11 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   const url = new URL(req.url)
   const page = Number(url.searchParams.get("page") ?? 1)
   const pageSize = Number(url.searchParams.get("page_size") ?? 20)
+  const logTypeRaw = url.searchParams.get("log_type")
+  const logType = logTypeRaw === "file" || logTypeRaw === "dataset" ? logTypeRaw : undefined
 
   try {
-    const result = await listIngestionLogs(id, page, pageSize)
+    const result = await listIngestionLogs(id, page, pageSize, logType)
     return NextResponse.json(result)
   } catch (err) {
     return ragflowErrorResponse(err)

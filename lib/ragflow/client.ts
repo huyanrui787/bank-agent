@@ -36,8 +36,10 @@ export type RagflowDataset = {
 export type RagflowDocument = {
   id: string
   name: string
-  /** UNSTART / RUNNING / CANCEL / DONE / FAIL */
+  /** 解析状态 UNSTART / RUNNING / CANCEL / DONE / FAIL（来自 run 字段） */
   status: string
+  /** 启用状态 0/1（来自 RAGFlow status 字段） */
+  enabled?: number
   /** 0.0 ~ 1.0 */
   progress: number
   chunkCount?: number
@@ -46,6 +48,17 @@ export type RagflowDocument = {
   createTime?: string
   progressMsg?: string
   processDuration?: number
+  metaFields?: Record<string, unknown>
+  suffix?: string
+}
+
+export type RagflowChunk = {
+  id: string
+  content: string
+  documentId: string
+  available: boolean
+  importantKeywords?: string[]
+  questions?: string[]
 }
 
 export type RetrievalTestChunk = {
@@ -185,7 +198,7 @@ export async function createDataset(name: string, description?: string): Promise
 
 export async function updateDataset(
   id: string,
-  patch: { name?: string; description?: string; embeddingModel?: string; chunkMethod?: string; parserConfig?: Record<string, unknown> },
+  patch: { name?: string; description?: string; embeddingModel?: string; chunkMethod?: string; parserConfig?: Record<string, unknown>; language?: string; permission?: string },
 ): Promise<void> {
   const body: Record<string, unknown> = {}
   if (patch.name !== undefined) body.name = patch.name
@@ -193,6 +206,8 @@ export async function updateDataset(
   if (patch.embeddingModel !== undefined) body.embedding_model = patch.embeddingModel
   if (patch.chunkMethod !== undefined) body.chunk_method = patch.chunkMethod
   if (patch.parserConfig !== undefined) body.parser_config = patch.parserConfig
+  if (patch.language !== undefined) body.language = patch.language
+  if (patch.permission !== undefined) body.permission = patch.permission
   await request(`/api/v1/datasets/${encodeURIComponent(id)}`, { method: "PUT", json: body })
 }
 
@@ -217,6 +232,7 @@ export async function listDocuments(datasetId: string): Promise<RagflowDocument[
       id: String(d.id ?? ""),
       name: String(d.name ?? ""),
       status: String(d.run ?? "UNSTART"),
+      enabled: typeof d.status === "number" ? d.status : undefined,
       progress: typeof d.progress === "number" ? d.progress : 0,
       chunkCount: typeof d.chunk_count === "number" ? d.chunk_count : undefined,
       tokenCount: typeof d.token_count === "number" ? d.token_count : undefined,
@@ -224,12 +240,146 @@ export async function listDocuments(datasetId: string): Promise<RagflowDocument[
       createTime: d.create_time ? String(d.create_time) : undefined,
       progressMsg: d.progress_msg ? String(d.progress_msg) : undefined,
       processDuration: typeof d.process_duration === "number" ? d.process_duration : undefined,
+      metaFields: (d.meta_fields as Record<string, unknown>) ?? undefined,
+      suffix: d.suffix ? String(d.suffix) : undefined,
     }
   })
 }
 
 export async function deleteDocument(datasetId: string, documentId: string): Promise<void> {
   await request(`/api/v1/datasets/${encodeURIComponent(datasetId)}/documents/${encodeURIComponent(documentId)}`, { method: "DELETE" })
+}
+
+/** 文档重命名（PATCH，body {name}） */
+export async function renameDocument(datasetId: string, documentId: string, name: string): Promise<void> {
+  await request(`/api/v1/datasets/${encodeURIComponent(datasetId)}/documents/${encodeURIComponent(documentId)}`, { method: "PATCH", json: { name } })
+}
+
+/** 文档启用/禁用（PATCH，body {enabled: 0|1}） */
+export async function setDocumentEnabled(datasetId: string, documentId: string, enabled: boolean): Promise<void> {
+  await request(`/api/v1/datasets/${encodeURIComponent(datasetId)}/documents/${encodeURIComponent(documentId)}`, { method: "PATCH", json: { enabled: enabled ? 1 : 0 } })
+}
+
+/** 文档元数据（PATCH，body {meta_fields}） */
+export async function updateDocumentMetadata(datasetId: string, documentId: string, metaFields: Record<string, unknown>): Promise<void> {
+  await request(`/api/v1/datasets/${encodeURIComponent(datasetId)}/documents/${encodeURIComponent(documentId)}`, { method: "PATCH", json: { meta_fields: metaFields } })
+}
+
+/** 批量启用/禁用（POST batch-update-status，body {doc_ids, status:"0"|"1"}） */
+export async function batchSetDocumentStatus(datasetId: string, docIds: string[], enabled: boolean): Promise<void> {
+  await request(`/api/v1/datasets/${encodeURIComponent(datasetId)}/documents/batch-update-status`, {
+    method: "POST",
+    json: { doc_ids: docIds, status: enabled ? "1" : "0" },
+  })
+}
+
+/** 重新解析（POST /documents/ingest，无 dataset 前缀；支持删除旧 chunk + 应用自动元数据） */
+export async function reparseDocuments(docIds: string[], opts?: { delete?: boolean; applyKb?: boolean }): Promise<void> {
+  await request(`/api/v1/documents/ingest`, {
+    method: "POST",
+    json: { doc_ids: docIds, run: "1", delete: opts?.delete ?? false, apply_kb: opts?.applyKb ?? false },
+  })
+}
+
+/** 停止解析（POST .../documents/stop，body {document_ids}） */
+export async function stopParsing(datasetId: string, docIds: string[]): Promise<void> {
+  await request(`/api/v1/datasets/${encodeURIComponent(datasetId)}/documents/stop`, { method: "POST", json: { document_ids: docIds } })
+}
+
+/** 新建空文件（POST ?type=empty，JSON body {name}） */
+export async function createEmptyDocument(datasetId: string, name: string): Promise<void> {
+  await request(`/api/v1/datasets/${encodeURIComponent(datasetId)}/documents?type=empty`, { method: "POST", json: { name } })
+}
+
+/** 单文档详情（GET ?id=） */
+export async function getDocument(datasetId: string, documentId: string): Promise<RagflowDocument | undefined> {
+  const data = await request<{ docs?: unknown[] } | unknown[]>(`/api/v1/datasets/${encodeURIComponent(datasetId)}/documents?id=${encodeURIComponent(documentId)}`)
+  const list = Array.isArray(data) ? data : data?.docs ?? []
+  if (list.length === 0) return undefined
+  const d = list[0] as Record<string, unknown>
+  return {
+    id: String(d.id ?? ""),
+    name: String(d.name ?? ""),
+    status: String(d.run ?? "UNSTART"),
+    enabled: typeof d.status === "number" ? d.status : undefined,
+    progress: typeof d.progress === "number" ? d.progress : 0,
+    chunkCount: typeof d.chunk_count === "number" ? d.chunk_count : undefined,
+    tokenCount: typeof d.token_count === "number" ? d.token_count : undefined,
+    size: d.size ? String(d.size) : undefined,
+    createTime: d.create_time ? String(d.create_time) : undefined,
+    progressMsg: d.progress_msg ? String(d.progress_msg) : undefined,
+    metaFields: (d.meta_fields as Record<string, unknown>) ?? undefined,
+    suffix: d.suffix ? String(d.suffix) : undefined,
+  }
+}
+
+/** 下载文档（返回文件流，非 JSON） */
+export async function downloadDocument(datasetId: string, documentId: string): Promise<{ blob: Blob; filename: string; contentType: string }> {
+  const { baseUrl, apiKey } = getConfig()
+  let res: Response
+  try {
+    res = await fetch(`${baseUrl}/api/v1/datasets/${encodeURIComponent(datasetId)}/documents/${encodeURIComponent(documentId)}`, {
+      headers: { Authorization: `Bearer ${apiKey}` },
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    })
+  } catch {
+    throw new RagflowError("unreachable", "RAGFlow 服务不可达")
+  }
+  if (!res.ok) throw new RagflowError("http_error", `RAGFlow HTTP ${res.status}`)
+  const blob = await res.blob()
+  const contentType = res.headers.get("Content-Type") ?? "application/octet-stream"
+  const disposition = res.headers.get("Content-Disposition") ?? ""
+  const m = disposition.match(/filename\*?=(?:UTF-8''|")?([^";]+)/)
+  const filename = m ? decodeURIComponent(m[1]) : "document"
+  return { blob, filename, contentType }
+}
+
+// ── chunk 管理 ────────────────────────────────────────────────────────────────
+
+export async function listChunks(datasetId: string, documentId: string, page = 1, pageSize = 20): Promise<{ total: number; chunks: RagflowChunk[] }> {
+  const data = await request<{ total?: number; chunks?: unknown[] }>(
+    `/api/v1/datasets/${encodeURIComponent(datasetId)}/documents/${encodeURIComponent(documentId)}/chunks?page=${page}&page_size=${pageSize}`,
+  )
+  const chunks = (data.chunks ?? []).map((r) => {
+    const c = r as Record<string, unknown>
+    return {
+      id: String(c.id ?? ""),
+      content: String(c.content ?? ""),
+      documentId: String(c.document_id ?? ""),
+      available: c.available === true,
+      importantKeywords: Array.isArray(c.important_keywords) ? (c.important_keywords as string[]) : undefined,
+      questions: Array.isArray(c.questions) ? (c.questions as string[]) : undefined,
+    }
+  })
+  return { total: data.total ?? chunks.length, chunks }
+}
+
+export async function createChunk(datasetId: string, documentId: string, content: string): Promise<void> {
+  await request(`/api/v1/datasets/${encodeURIComponent(datasetId)}/documents/${encodeURIComponent(documentId)}/chunks`, {
+    method: "POST",
+    json: { content },
+  })
+}
+
+export async function deleteChunks(datasetId: string, documentId: string, chunkIds: string[]): Promise<void> {
+  await request(`/api/v1/datasets/${encodeURIComponent(datasetId)}/documents/${encodeURIComponent(documentId)}/chunks`, {
+    method: "DELETE",
+    json: { chunk_ids: chunkIds },
+  })
+}
+
+export async function updateChunk(datasetId: string, documentId: string, chunkId: string, patch: { content?: string; available?: boolean }): Promise<void> {
+  await request(`/api/v1/datasets/${encodeURIComponent(datasetId)}/documents/${encodeURIComponent(documentId)}/chunks/${encodeURIComponent(chunkId)}`, {
+    method: "PATCH",
+    json: { content: patch.content, available: patch.available === undefined ? undefined : (patch.available ? 1 : 0) },
+  })
+}
+
+export async function setChunksAvailable(datasetId: string, documentId: string, chunkIds: string[], available: boolean): Promise<void> {
+  await request(`/api/v1/datasets/${encodeURIComponent(datasetId)}/documents/${encodeURIComponent(documentId)}/chunks`, {
+    method: "PATCH",
+    json: { chunk_ids: chunkIds, available_int: available ? 1 : 0 },
+  })
 }
 
 // ── 检索 ──────────────────────────────────────────────────────────────────────
@@ -285,7 +435,7 @@ export async function searchKnowledge(
 export async function testRetrieval(
   datasetId: string,
   query: string,
-  opts?: { topK?: number; similarityThreshold?: number; highlight?: boolean },
+  opts?: { topK?: number; similarityThreshold?: number; vectorSimilarityWeight?: number; highlight?: boolean; documentIds?: string[] },
 ): Promise<RetrievalTestResult> {
   const topK = opts?.topK ?? TOP_K
   const data = await request<{ total?: number; chunks?: unknown[]; doc_aggs?: unknown }>("/api/v1/retrieval", {
@@ -293,10 +443,12 @@ export async function testRetrieval(
     json: {
       question: query,
       dataset_ids: [datasetId],
+      document_ids: opts?.documentIds ?? [],
       page: 1,
       page_size: topK,
       top_k: topK,
       similarity_threshold: opts?.similarityThreshold ?? SIMILARITY_THRESHOLD,
+      vector_similarity_weight: opts?.vectorSimilarityWeight ?? 0.3,
       highlight: opts?.highlight ?? true,
     },
   })
@@ -343,9 +495,10 @@ export async function getIngestionSummary(datasetId: string): Promise<RagflowIng
   }
 }
 
-export async function listIngestionLogs(datasetId: string, page = 1, pageSize = 20): Promise<{ total: number; logs: RagflowIngestionLog[] }> {
+export async function listIngestionLogs(datasetId: string, page = 1, pageSize = 20, logType?: "file" | "dataset"): Promise<{ total: number; logs: RagflowIngestionLog[] }> {
+  const typeParam = logType ? `&log_type=${logType}` : ""
   const d = (await request<{ total?: number; logs?: unknown[] }>(
-    `/api/v1/datasets/${encodeURIComponent(datasetId)}/ingestions?page=${page}&page_size=${pageSize}`,
+    `/api/v1/datasets/${encodeURIComponent(datasetId)}/ingestions?page=${page}&page_size=${pageSize}${typeParam}`,
   )) as { total?: number; logs?: unknown[] }
   const logs = (d.logs ?? []).map((r) => {
     const l = r as Record<string, unknown>

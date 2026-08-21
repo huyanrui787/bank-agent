@@ -28,6 +28,8 @@ const updateSchema = z.object({
   description: z.string().max(65535).optional(),
   chunkMethod: z.string().max(32).optional(),
   parserConfig: z.record(z.string(), z.unknown()).optional(),
+  language: z.string().max(32).optional(),
+  permission: z.string().max(16).optional(),
 })
 
 // PUT /api/knowledge-base/datasets/[id] — 更新配置（切片方法 / 解析配置 / 名称 / 描述）
@@ -47,6 +49,8 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       description: parsed.data.description,
       chunkMethod: parsed.data.chunkMethod,
       parserConfig: parsed.data.parserConfig,
+      language: parsed.data.language,
+      permission: parsed.data.permission,
     })
     writeAuditLog({
       actorId: user.sub,

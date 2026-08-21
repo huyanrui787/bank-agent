@@ -5,6 +5,7 @@ import { Search, Loader2, FileText } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Card, CardContent } from "@/components/ui/card"
 
 type TestChunk = {
@@ -15,27 +16,39 @@ type TestChunk = {
   source: string
   positions: number[][]
 }
+type DocAgg = { docName: string; docId: string; count: number }
 
 export function TestingTab({ datasetId }: { datasetId: string }) {
   const [query, setQuery] = useState("")
-  const [topK, setTopK] = useState(5)
   const [threshold, setThreshold] = useState(0.2)
+  const [vectorWeight, setVectorWeight] = useState(0.3)
+  const [size, setSize] = useState(10)
+  const [docFilter, setDocFilter] = useState("all")
   const [loading, setLoading] = useState(false)
   const [chunks, setChunks] = useState<TestChunk[]>([])
+  const [docAggs, setDocAggs] = useState<DocAgg[]>([])
   const [total, setTotal] = useState(0)
   const [tested, setTested] = useState(false)
 
-  async function handleTest() {
+  async function runTest() {
     if (!query.trim()) { toast.error("请输入检索问题"); return }
     setLoading(true)
     try {
+      const body: Record<string, unknown> = {
+        query: query.trim(),
+        topK: size,
+        similarityThreshold: threshold,
+        vectorSimilarityWeight: vectorWeight,
+        highlight: false,
+      }
+      if (docFilter !== "all") body.documentIds = [docFilter]
       const res = await fetch(`/api/knowledge-base/datasets/${datasetId}/test`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: query.trim(), topK, similarityThreshold: threshold, highlight: false }),
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
       })
       if (!res.ok) { const d = await res.json().catch(() => ({})); toast.error(d.error ?? "检索失败"); return }
       const d = await res.json()
       setChunks(d.chunks ?? [])
+      setDocAggs(d.docAggs ?? [])
       setTotal(d.total ?? 0)
       setTested(true)
     } finally { setLoading(false) }
@@ -43,25 +56,58 @@ export function TestingTab({ datasetId }: { datasetId: string }) {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-end gap-2 flex-wrap">
-        <div className="flex-1 min-w-52 space-y-1.5">
+      <div className="space-y-3">
+        <div className="space-y-1.5">
           <label className="text-xs text-muted-foreground">检索问题</label>
           <Input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="输入问题，测试检索效果"
-            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) handleTest() }}
+            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) runTest() }}
           />
         </div>
-        <div className="w-24 space-y-1.5">
-          <label className="text-xs text-muted-foreground">召回条数</label>
-          <Input type="number" min={1} max={50} value={topK} onChange={(e) => setTopK(Number(e.target.value) || 5)} />
+
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <div className="space-y-1">
+            <div className="flex items-center justify-between">
+              <label className="text-xs text-muted-foreground">相似度阈值</label>
+              <span className="text-xs">{threshold.toFixed(2)}</span>
+            </div>
+            <input type="range" min={0} max={1} step={0.01} value={threshold} onChange={(e) => setThreshold(Number(e.target.value))} className="w-full" />
+          </div>
+          <div className="space-y-1">
+            <div className="flex items-center justify-between">
+              <label className="text-xs text-muted-foreground">向量权重</label>
+              <span className="text-xs">{vectorWeight.toFixed(2)}</span>
+            </div>
+            <input type="range" min={0} max={1} step={0.01} value={vectorWeight} onChange={(e) => setVectorWeight(Number(e.target.value))} className="w-full" />
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-xs text-muted-foreground">结果条数</label>
+            <Select value={String(size)} onValueChange={(v) => setSize(Number(v))}>
+              <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="10">10 条</SelectItem>
+                <SelectItem value="20">20 条</SelectItem>
+                <SelectItem value="50">50 条</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-xs text-muted-foreground">来源文件过滤</label>
+            <Select value={docFilter} onValueChange={setDocFilter}>
+              <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">全部文件</SelectItem>
+                {docAggs.map((a) => (
+                  <SelectItem key={a.docId} value={a.docId}>{a.docName}（{a.count}）</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
-        <div className="w-28 space-y-1.5">
-          <label className="text-xs text-muted-foreground">相似度阈值</label>
-          <Input type="number" step={0.05} min={0} max={1} value={threshold} onChange={(e) => setThreshold(Number(e.target.value) || 0.2)} />
-        </div>
-        <Button size="sm" onClick={handleTest} disabled={loading}>
+
+        <Button size="sm" onClick={runTest} disabled={loading}>
           {loading ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Search className="h-4 w-4 mr-1" />}
           测试
         </Button>

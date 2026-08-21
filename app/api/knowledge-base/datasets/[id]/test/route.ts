@@ -11,7 +11,9 @@ const testSchema = z.object({
   query: z.string().min(1, "请输入检索问题"),
   topK: z.number().int().min(1).max(50).optional(),
   similarityThreshold: z.number().min(0).max(1).optional(),
+  vectorSimilarityWeight: z.number().min(0).max(1).optional(),
   highlight: z.boolean().optional(),
+  documentIds: z.array(z.string()).optional(),
 })
 
 // POST /api/knowledge-base/datasets/[id]/test — 检索测试
@@ -29,7 +31,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const result = await testRetrieval(id, parsed.data.query, {
       topK: parsed.data.topK,
       similarityThreshold: parsed.data.similarityThreshold,
+      vectorSimilarityWeight: parsed.data.vectorSimilarityWeight,
       highlight: parsed.data.highlight,
+      documentIds: parsed.data.documentIds,
     })
     return NextResponse.json(result)
   } catch (err) {
